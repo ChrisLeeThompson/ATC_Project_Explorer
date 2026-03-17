@@ -291,6 +291,10 @@ class ImageViewerGroupBox(QGroupBox):
                 border: none;
                 spacing: 4px;
                 padding: 2px;
+                color: {AppStyles.Colors.TEXT_PRIMARY};
+            }}
+            QLabel {{
+                color: {AppStyles.Colors.TEXT_PRIMARY};
             }}
             QToolButton {{
                 background-color: {AppStyles.Colors.BUTTON_BG};
