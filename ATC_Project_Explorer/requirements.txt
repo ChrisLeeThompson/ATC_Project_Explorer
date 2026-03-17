@@ -1,0 +1,31 @@
+# =============================================================
+# ATC Project Explorer 1.0 — Python Dependencies
+# =============================================================
+# Python 3.11+
+#
+# Install:  pip install -r requirements.txt
+# =============================================================
+
+# --- Core Dependencies ----------------------------------------
+
+# Qt GUI framework (widgets, signals/slots, threading)
+PySide6>=6.5.0
+
+# Numerical arrays for image data
+numpy>=1.24.0
+
+# Plotting — bar charts, scatter atlas, image viewer canvas
+# (uses the Qt-Agg backend via matplotlib.backends.backend_qtagg)
+matplotlib>=3.7.0
+
+# --- Recommended Dependencies ---------------------------------
+# These are imported lazily with try/except guards and the
+# application runs without them, but functionality is reduced.
+
+# Image loading fallback when matplotlib's reader fails
+Pillow>=10.0.0
+
+# TIFF metadata extraction (FEI/TFS instrument tags)
+# Required for image overlay graphics and the site position
+# atlas image montage. Without it, TIF metadata is skipped.
+tifffile>=2023.2.0
