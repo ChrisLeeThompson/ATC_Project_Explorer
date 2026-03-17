@@ -22,7 +22,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QSizePolicy
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Slot
 from script_modules.app_styles import AppStyles
 from script_modules.groupboxes.site_stats_groupbox import SiteStatsGroupBox
 from script_modules.groupboxes.site_preview_groupbox import SitePreviewGroupBox
@@ -42,6 +42,8 @@ class SitePanel(QWidget):
         self._create_widgets()
         # Setup layout
         self._setup_layout()
+        # Wire inter-widget signals
+        self._connect_signals()
 
     # -----------------------------------------------------------------
     # Public API
@@ -141,3 +143,33 @@ class SitePanel(QWidget):
         panel_layout.setContentsMargins(0, 0, 0, 0)
         panel_layout.setSpacing(0)
         panel_layout.addWidget(self._scroll_area)
+
+    def _connect_signals(self):
+        """Wire inter-widget signals."""
+        self.site_preview_groupbox.preview_clicked.connect(
+            self._on_preview_clicked
+        )
+
+    # -----------------------------------------------------------------
+    # Slots
+    # -----------------------------------------------------------------
+
+    @Slot(str, str)
+    def _on_preview_clicked(
+        self, directory_name: str, filename: str
+    ) -> None:
+        """Scroll to the image viewer and select the clicked
+        preview image.
+
+        :param directory_name: Source directory name
+            (e.g. ``"LamellaEvaluationImages"``).
+        :param filename: Image file name to navigate to.
+        """
+        # Scroll the image viewer into view
+        self._scroll_area.ensureWidgetVisible(
+            self.image_viewer_groupbox, 0, 50
+        )
+        # Select the directory and image
+        self.image_viewer_groupbox.select_image(
+            directory_name, filename
+        )

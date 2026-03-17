@@ -34,6 +34,12 @@ Both images are displayed as simple thumbnails with no
 matplotlib toolbar.  File names are shown as tooltips on
 hover.  A centred "Image not available" placeholder is
 shown when the target image cannot be found or loaded.
+
+Each preview image is clickable: hovering shows a subtle
+border and a pointing-hand cursor; clicking emits the
+:attr:`~SitePreviewGroupBox.preview_clicked` signal with
+the source directory name and file name so the parent panel
+can scroll to and select the image in the full image viewer.
 """
 import logging
 from pathlib import Path
@@ -44,9 +50,11 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
 from PySide6.QtWidgets import (
-    QGroupBox, QVBoxLayout, QHBoxLayout,
+    QGroupBox, QVBoxLayout, QHBoxLayout, QFrame,
     QSizePolicy,
 )
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QCursor
 from script_modules.app_styles import AppStyles
 
 
@@ -103,11 +111,89 @@ def _style_preview_axes(ax):
 
 
 # -----------------------------------------------------------------
+# Clickable Preview Frame
+# -----------------------------------------------------------------
+
+class _ClickablePreviewFrame(QFrame):
+    """QFrame wrapper that adds hover border and click detection
+    to a preview canvas.
+
+    When ``clickable`` is True, entering the frame shows a
+    subtle border and switches to a pointing-hand cursor.
+    Leaving restores the default appearance.
+    """
+
+    def __init__(self, canvas: FigureCanvasQTAgg, parent=None):
+        super().__init__(parent)
+        self._canvas = canvas
+        self._clickable = False
+        self._default_cursor = self.cursor()
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(0)
+        layout.addWidget(canvas)
+
+        # Reserve border space with a transparent border so
+        # the layout does not shift on hover.
+        self._apply_border(False)
+
+    def set_clickable(self, clickable: bool) -> None:
+        """Enable or disable the hover and click behaviour.
+
+        :param clickable: True when a valid image is displayed.
+        """
+        self._clickable = clickable
+        if not clickable:
+            self._apply_border(False)
+            self.setCursor(self._default_cursor)
+
+    def _apply_border(self, visible: bool) -> None:
+        """Toggle the hover border.
+
+        :param visible: Show or hide the border.
+        """
+        color = (
+            AppStyles.Colors.BUTTON_HOVER
+            if visible
+            else "transparent"
+        )
+        self.setStyleSheet(
+            f"QFrame {{"
+            f"  border: 2px solid {color};"
+            f"  border-radius: "
+            f"  {AppStyles.Dimensions.BORDER_RADIUS_SMALL};"
+            f"  background-color: transparent;"
+            f"}}"
+        )
+
+    def enterEvent(self, event):
+        """Show hover border and pointing-hand cursor."""
+        if self._clickable:
+            self._apply_border(True)
+            self.setCursor(
+                QCursor(Qt.CursorShape.PointingHandCursor)
+            )
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """Restore default border and cursor."""
+        self._apply_border(False)
+        self.setCursor(self._default_cursor)
+        super().leaveEvent(event)
+
+
+# -----------------------------------------------------------------
 # Site Preview GroupBox
 # -----------------------------------------------------------------
 
 class SitePreviewGroupBox(QGroupBox):
     """Side-by-side preview of electron and polishing images."""
+
+    # Emitted when the user clicks a preview image.  Carries
+    # the image directory name and the image file name so the
+    # image viewer can navigate directly to that image.
+    preview_clicked = Signal(str, str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -116,8 +202,16 @@ class SitePreviewGroupBox(QGroupBox):
         # State
         self._project_root: Path | None = None
 
+        # Track the source directory and filename for each side
+        # so the signal can carry them on click.
+        self._left_dir_name: str = ""
+        self._left_filename: str = ""
+        self._right_dir_name: str = ""
+        self._right_filename: str = ""
+
         self._create_widgets()
         self._setup_layout()
+        self._connect_click_events()
 
     # -----------------------------------------------------------------
     # Public API
@@ -140,8 +234,14 @@ class SitePreviewGroupBox(QGroupBox):
         directories = site_data.get("ImageDirectories", [])
         site_name = site_data.get("SiteName", "Unknown")
 
-        left_path = self._find_left_image(directories)
-        right_path = self._find_right_image(directories)
+        left_path, left_dir = self._find_left_image(directories)
+        right_path, right_dir = self._find_right_image(directories)
+
+        # Store source info for click-to-navigate
+        self._left_dir_name = left_dir
+        self._left_filename = left_path.name if left_path else ""
+        self._right_dir_name = right_dir
+        self._right_filename = right_path.name if right_path else ""
 
         left_name = left_path.name if left_path else "None"
         right_name = right_path.name if right_path else "None"
@@ -157,6 +257,10 @@ class SitePreviewGroupBox(QGroupBox):
             self._right_ax, self._right_canvas, right_path,
         )
 
+        # Enable click interaction when an image is loaded
+        self._left_frame.set_clickable(left_path is not None)
+        self._right_frame.set_clickable(right_path is not None)
+
         self._left_canvas.draw_idle()
         self._right_canvas.draw_idle()
 
@@ -169,6 +273,13 @@ class SitePreviewGroupBox(QGroupBox):
             ax.clear()
             _style_preview_axes(ax)
             canvas.setToolTip("")
+
+        self._left_frame.set_clickable(False)
+        self._right_frame.set_clickable(False)
+        self._left_dir_name = ""
+        self._left_filename = ""
+        self._right_dir_name = ""
+        self._right_filename = ""
 
         self._left_canvas.draw_idle()
         self._right_canvas.draw_idle()
@@ -211,13 +322,22 @@ class SitePreviewGroupBox(QGroupBox):
         _style_preview_axes(self._right_ax)
         self._right_canvas.setStyleSheet(_canvas_style)
 
+        # Wrap each canvas in a clickable frame for hover
+        # border and click-to-navigate behaviour.
+        self._left_frame = _ClickablePreviewFrame(
+            self._left_canvas, parent=self
+        )
+        self._right_frame = _ClickablePreviewFrame(
+            self._right_canvas, parent=self
+        )
+
     def _setup_layout(self):
         """Arrange the two previews side by side."""
         pair_layout = QHBoxLayout()
         pair_layout.setContentsMargins(0, 0, 0, 0)
         pair_layout.setSpacing(AppStyles.Dimensions.LAYOUT_VSPACING)
-        pair_layout.addWidget(self._left_canvas, 1)
-        pair_layout.addWidget(self._right_canvas, 1)
+        pair_layout.addWidget(self._left_frame, 1)
+        pair_layout.addWidget(self._right_frame, 1)
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(
@@ -231,7 +351,58 @@ class SitePreviewGroupBox(QGroupBox):
 
         self.setStyleSheet(
             AppStyles.GroupBox.plot_with_title()
-            
+            + AppStyles.AppToolTips.default()
+        )
+
+    # -----------------------------------------------------------------
+    # Click-to-Navigate
+    # -----------------------------------------------------------------
+
+    def _connect_click_events(self):
+        """Connect matplotlib click events on both canvases."""
+        self._left_canvas.mpl_connect(
+            "button_press_event", self._on_left_clicked
+        )
+        self._right_canvas.mpl_connect(
+            "button_press_event", self._on_right_clicked
+        )
+
+    def _on_left_clicked(self, event):
+        """Handle click on the left preview canvas.
+
+        :param event: Matplotlib button_press_event.
+        """
+        if (
+            event.button != 1
+            or not self._left_dir_name
+            or not self._left_filename
+        ):
+            return
+        logger.info(
+            f"Preview click: '{self._left_filename}' "
+            f"in '{self._left_dir_name}'"
+        )
+        self.preview_clicked.emit(
+            self._left_dir_name, self._left_filename
+        )
+
+    def _on_right_clicked(self, event):
+        """Handle click on the right preview canvas.
+
+        :param event: Matplotlib button_press_event.
+        """
+        if (
+            event.button != 1
+            or not self._right_dir_name
+            or not self._right_filename
+        ):
+            return
+        logger.info(
+            f"Preview click: '{self._right_filename}' "
+            f"in '{self._right_dir_name}'"
+        )
+        self.preview_clicked.emit(
+            self._right_dir_name, self._right_filename
         )
 
     # -----------------------------------------------------------------
@@ -240,7 +411,7 @@ class SitePreviewGroupBox(QGroupBox):
 
     def _find_left_image(
         self, directories: list[dict]
-    ) -> Path | None:
+    ) -> tuple[Path | None, str]:
         """Find the left preview image path.
 
         Prefers the last image from ``LamellaEvaluationImages``.
@@ -248,46 +419,51 @@ class SitePreviewGroupBox(QGroupBox):
         ``PrecisePositioningLogImages``.
 
         :param directories: Site's ImageDirectories list.
-        :return: Absolute image path, or *None*.
+        :return: Tuple of (absolute image path or *None*, source
+            directory name).
         """
         # Try LamellaEvaluationImages first
+        dir_name = "LamellaEvaluationImages"
         path = self._last_image_in_directory(
-            directories, "LamellaEvaluationImages"
+            directories, dir_name
         )
         if path is not None:
             logger.debug(
                 f"Left preview: using LamellaEvaluationImages"
             )
-            return path
+            return path, dir_name
 
         # Fallback: last electron image from positioning log
+        dir_name = "PrecisePositioningLogImages"
         logger.debug(
             "Left preview: LamellaEvaluationImages unavailable, "
             "falling back to PrecisePositioningLogImages"
         )
         return self._last_matching_image(
             directories,
-            "PrecisePositioningLogImages",
+            dir_name,
             "electron",
-        )
+        ), dir_name
 
     def _find_right_image(
         self, directories: list[dict]
-    ) -> Path | None:
+    ) -> tuple[Path | None, str]:
         """Find the right preview image path.
 
         Returns the last polishing match image (excluding electron
         images) from ``PrecisePositioningLogImages``.
 
         :param directories: Site's ImageDirectories list.
-        :return: Absolute image path, or *None*.
+        :return: Tuple of (absolute image path or *None*, source
+            directory name).
         """
+        dir_name = "PrecisePositioningLogImages"
         return self._last_matching_image(
             directories,
-            "PrecisePositioningLogImages",
+            dir_name,
             "polishing",
             exclude="electron",
-        )
+        ), dir_name
 
     def _last_image_in_directory(
         self,

@@ -163,6 +163,55 @@ class ImageViewerGroupBox(QGroupBox):
         self._clear_metadata()
         self._update_nav_button_states()
 
+    def select_image(
+        self, directory_name: str, filename: str
+    ) -> None:
+        """Programmatically select a directory and navigate to a
+        specific image.
+
+        Used by the site preview click-to-navigate feature to
+        jump directly to a preview image in the full viewer.
+
+        :param directory_name: The ``DirectoryName`` value to
+            match (e.g. ``"LamellaEvaluationImages"``).
+        :param filename: The image file name to navigate to
+            within that directory.
+        """
+        # Find the directory index
+        dir_index = -1
+        for i, directory in enumerate(self._image_directories):
+            if directory.get("DirectoryName", "") == directory_name:
+                dir_index = i
+                break
+
+        if dir_index < 0:
+            logger.warning(
+                f"select_image: directory '{directory_name}' "
+                f"not found"
+            )
+            return
+
+        # Select the directory (triggers path resolution)
+        self._directory_combobox.setCurrentIndex(dir_index)
+        self._on_directory_selected(dir_index)
+
+        # Find the image by filename
+        for i, path in enumerate(self._current_image_paths):
+            if path.name == filename:
+                self._current_index = i
+                self._display_current_image()
+                self._update_nav_button_states()
+                logger.info(
+                    f"select_image: navigated to '{filename}' "
+                    f"in '{directory_name}'"
+                )
+                return
+
+        logger.warning(
+            f"select_image: '{filename}' not found in "
+            f"'{directory_name}'"
+        )
+
     # -----------------------------------------------------------------
     # Setup
     # -----------------------------------------------------------------
