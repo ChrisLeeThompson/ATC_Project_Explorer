@@ -15,6 +15,8 @@ Shared functionality:
     - QGroupBox wrapper with the ``plot()`` stylesheet.
     - ``_clear_axes()`` to reset and restyle.
     - Hover tooltip annotation and highlight rectangle creation.
+    - Optional ``NavigationToolbar2QT`` (zoom, pan, home, save)
+      enabled via the ``_toolbar_enabled`` class attribute.
 
 Usage::
 
@@ -29,9 +31,22 @@ Usage::
 
         def clear(self):
             self._clear_axes()
+
+Toolbar usage::
+
+    class MyInteractiveChart(StyledChartWidget):
+        _toolbar_enabled = True
+
+        def _on_mouse_move(self, event):
+            if self._is_toolbar_active():
+                return
+            # ... custom hover logic ...
 """
 import logging
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.backends.backend_qtagg import (
+    FigureCanvasQTAgg,
+    NavigationToolbar2QT,
+)
 from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle
 from PySide6.QtWidgets import (
@@ -52,13 +67,22 @@ class StyledChartWidget(QWidget):
 
     Subclasses should override ``populate()`` and ``clear()``
     to implement chart-specific rendering logic.
+
+    Set ``_toolbar_enabled = True`` in a subclass to include a
+    matplotlib ``NavigationToolbar2QT`` (zoom, pan, home, save)
+    above the canvas.  Use :meth:`_is_toolbar_active` to check
+    whether the toolbar is currently in zoom or pan mode.
     """
+
+    # Subclasses set this to True to include the toolbar.
+    _toolbar_enabled: bool = False
 
     def __init__(self, parent=None):
         super().__init__(parent)
         # Hover tooltip state (managed by subclasses)
         self._annotation = None
         self._hover_rect = None
+        self._toolbar = None
         self._create_matplotlib_components()
         self._setup_chart_layout()
 
@@ -85,6 +109,45 @@ class StyledChartWidget(QWidget):
         self.figure.set_dpi(110)
         self.canvas.setStyleSheet(
             f"background-color: {AppStyles.Colors.MAIN_BG};"
+        )
+
+        # Create the toolbar when requested by the subclass
+        if self._toolbar_enabled:
+            self._create_toolbar()
+
+    def _create_toolbar(self):
+        """Create and style the matplotlib NavigationToolbar2QT.
+
+        The toolbar provides Home, Back, Forward, Pan, Zoom, and
+        Save actions.  It is styled to match the application's
+        dark theme.
+        """
+        self._toolbar = NavigationToolbar2QT(
+            self.canvas, parent=self
+        )
+        self._toolbar.setStyleSheet(
+            f"""
+            QToolBar {{
+                background-color: {AppStyles.Colors.GROUPBOX_BG};
+                border: none;
+                spacing: 4px;
+                padding: 2px;
+            }}
+            QToolButton {{
+                background-color: {AppStyles.Colors.BUTTON_BG};
+                border: 1px solid {AppStyles.Colors.INPUT_BORDER};
+                border-radius: {AppStyles.Dimensions.BORDER_RADIUS_SMALL};
+                padding: 4px;
+                color: {AppStyles.Colors.TEXT_PRIMARY};
+            }}
+            QToolButton:hover {{
+                background-color: {AppStyles.Colors.BUTTON_HOVER};
+            }}
+            QToolButton:checked {{
+                background-color: {AppStyles.Colors.BUTTON_PRESSED};
+                border: 1px solid {AppStyles.Colors.BUTTON_HOVER};
+            }}
+            """
         )
 
     def _style_axes(self):
@@ -125,10 +188,18 @@ class StyledChartWidget(QWidget):
 
         Uses the ``plot()`` groupbox style. Subclasses can
         override this if they need a different layout structure.
+
+        When ``_toolbar_enabled`` is True the toolbar is placed
+        above the canvas inside the group box.
         """
         self._group_box = QGroupBox()
         group_box_layout = QVBoxLayout()
         group_box_layout.setContentsMargins(8, 8, 8, 8)
+
+        # Toolbar sits above the canvas when enabled
+        if self._toolbar is not None:
+            group_box_layout.addWidget(self._toolbar)
+
         group_box_layout.addWidget(self.canvas)
         self._group_box.setLayout(group_box_layout)
         self._group_box.setStyleSheet(AppStyles.GroupBox.plot())
@@ -138,6 +209,27 @@ class StyledChartWidget(QWidget):
         layout.addWidget(self._group_box)
         self.setLayout(layout)
         self.setMinimumHeight(AppStyles.Dimensions.PLOT_MINIMUM_HEIGHT)
+
+    # -----------------------------------------------------------------
+    # Toolbar Helpers
+    # -----------------------------------------------------------------
+
+    def _is_toolbar_active(self) -> bool:
+        """Return True if the toolbar is in zoom or pan mode.
+
+        Subclasses should call this at the top of custom mouse
+        event handlers to avoid conflicting with the toolbar's
+        own drag interaction.
+        """
+        if self._toolbar is None:
+            return False
+        # NavigationToolbar2QT.mode is a string: '', 'zoom rect',
+        # or 'pan/zoom' depending on which tool is toggled.
+        return self._toolbar.mode != ""
+
+    # -----------------------------------------------------------------
+    # Axes Helpers
+    # -----------------------------------------------------------------
 
     def _clear_axes(self):
         """Clear the axes, restyle, and redraw the blank canvas."""

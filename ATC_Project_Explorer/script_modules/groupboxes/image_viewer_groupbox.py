@@ -236,7 +236,28 @@ class ImageViewerGroupBox(QGroupBox):
             self._canvas, parent=self
         )
         self._toolbar.setStyleSheet(
-            f"background-color: {AppStyles.Colors.MAIN_BG};"
+            f"""
+            QToolBar {{
+                background-color: {AppStyles.Colors.GROUPBOX_BG};
+                border: none;
+                spacing: 4px;
+                padding: 2px;
+            }}
+            QToolButton {{
+                background-color: {AppStyles.Colors.BUTTON_BG};
+                border: 1px solid {AppStyles.Colors.INPUT_BORDER};
+                border-radius: {AppStyles.Dimensions.BORDER_RADIUS_SMALL};
+                padding: 4px;
+                color: {AppStyles.Colors.TEXT_PRIMARY};
+            }}
+            QToolButton:hover {{
+                background-color: {AppStyles.Colors.BUTTON_HOVER};
+            }}
+            QToolButton:checked {{
+                background-color: {AppStyles.Colors.BUTTON_PRESSED};
+                border: 1px solid {AppStyles.Colors.BUTTON_HOVER};
+            }}
+            """
         )
 
         # Navigation buttons (NoFocus prevents scroll-on-click)

@@ -78,6 +78,10 @@ _PRECISE_POS_DIR = "PrecisePositioningLogImages"
 class SitePositionPlotWidget(StyledChartWidget):
     """Grid atlas scatter plot with optional SEM image montage."""
 
+    # Enable the matplotlib navigation toolbar (zoom, pan, home,
+    # save) so users can inspect closely-spaced lamella positions.
+    _toolbar_enabled = True
+
     # Emitted when the user chooses "Open site" from the marker
     # context menu.  Carries the site name string.
     site_selected = Signal(str)
@@ -799,8 +803,14 @@ class SitePositionPlotWidget(StyledChartWidget):
         """Enlarge the nearest marker on hover and switch to a
         pointing-hand cursor to indicate it is clickable.
 
+        Suppressed when the toolbar is in pan or zoom mode so the
+        drag interaction is not disrupted.
+
         :param event: Matplotlib motion_notify_event.
         """
+        if self._is_toolbar_active():
+            return
+
         if (
             self._scatter is None
             or event.inaxes != self.ax
@@ -837,8 +847,14 @@ class SitePositionPlotWidget(StyledChartWidget):
     def _on_mouse_click(self, event):
         """Show a context menu when a marker is left-clicked.
 
+        Suppressed when the toolbar is in pan or zoom mode so the
+        click is consumed by the toolbar instead.
+
         :param event: Matplotlib button_press_event.
         """
+        if self._is_toolbar_active():
+            return
+
         if (
             self._scatter is None
             or event.inaxes != self.ax
