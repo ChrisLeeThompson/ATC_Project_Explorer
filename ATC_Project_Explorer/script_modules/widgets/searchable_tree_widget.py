@@ -122,9 +122,11 @@ class SearchableTreePanel(QGroupBox):
     def populate(self, data: dict) -> None:
         """Build the tree from a nested dictionary.
 
+        The current search text is preserved so the filter
+        persists when navigating between images or data sets.
+
         :param data: Dictionary to display in the tree.
         """
-        self.search_line_edit.clear()
         self._build_tree(data)
         self._reapply_search_filter()
 
@@ -264,6 +266,12 @@ class SearchableTreePanel(QGroupBox):
     ) -> bool:
         """Recursively filter a tree item and its children.
 
+        When an item's key or value matches the search, all of
+        its descendants are made visible so the user can see the
+        values underneath a matching branch (e.g. searching for
+        ``"pattern"`` will show ``PatternCenterPositionPx`` *and*
+        its ``X`` / ``Y`` value children).
+
         :param item: The tree item to evaluate.
         :param search: Lowercase search text.
         :return: True if this item or any descendant matches.
@@ -272,12 +280,19 @@ class SearchableTreePanel(QGroupBox):
             search in item.text(0).lower()
             or search in item.text(1).lower()
         )
+
+        if item_matches:
+            # Show this item and all descendants
+            self._set_item_visible(item, True)
+            return True
+
+        # Recurse into children
         child_matches = False
         for i in range(item.childCount()):
             if self._filter_item(item.child(i), search):
                 child_matches = True
 
-        visible = item_matches or child_matches
+        visible = child_matches
         item.setHidden(not visible)
         return visible
 

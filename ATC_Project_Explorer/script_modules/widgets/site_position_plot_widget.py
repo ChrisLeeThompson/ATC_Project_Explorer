@@ -128,18 +128,42 @@ class SitePositionPlotWidget(StyledChartWidget):
             for entry in entries:
                 self._load_image_data(entry, project_root)
 
-        # ── 3. Compute centroid (always from fallback positions) ─
-        mean_x_m = (
-            sum(e["fallback_x_m"] for e in entries) / len(entries)
-        )
-        mean_y_m = (
-            sum(e["fallback_y_m"] for e in entries) / len(entries)
-        )
-
-        # Convert every position to relative µm from centroid
+        # ── Diagnostic: compare coordinate sources ───────────────
+        # Log fallback (ChunkSiteLocation) vs. image metadata
+        # stage positions so coordinate-system mismatches are
+        # easy to spot.
         for e in entries:
-            # Display position: prefer image metadata, fall back to
-            # project data
+            name = e["site_name"]
+            fb_x = e["fallback_x_m"]
+            fb_y = e["fallback_y_m"]
+            im_x = e["image_stage_x_m"]
+            im_y = e["image_stage_y_m"]
+            if im_x is not None and im_y is not None:
+                delta_x = (im_x - fb_x) * 1e6
+                delta_y = (im_y - fb_y) * 1e6
+                logger.debug(
+                    f"[{name}] fallback=("
+                    f"{fb_x*1e3:.4f}, {fb_y*1e3:.4f}) mm | "
+                    f"image_stage=("
+                    f"{im_x*1e3:.4f}, {im_y*1e3:.4f}) mm | "
+                    f"delta=({delta_x:.1f}, {delta_y:.1f}) µm"
+                )
+            else:
+                logger.debug(
+                    f"[{name}] fallback=("
+                    f"{fb_x*1e3:.4f}, {fb_y*1e3:.4f}) mm | "
+                    f"image_stage=None (using fallback)"
+                )
+
+        # ── 3. Compute display positions and centroid ────────────
+        # Use the same position source for both the centroid and
+        # display so they share a consistent coordinate frame.
+        # Previously the centroid was always from fallback, while
+        # display preferred image metadata — when those used
+        # different coordinate systems (e.g. StageSettings vs
+        # StageCollection) images were displaced from markers.
+        display_positions: list[tuple[float, float]] = []
+        for e in entries:
             pos_x = (
                 e["image_stage_x_m"]
                 if e["image_stage_x_m"] is not None
@@ -150,6 +174,20 @@ class SitePositionPlotWidget(StyledChartWidget):
                 if e["image_stage_y_m"] is not None
                 else e["fallback_y_m"]
             )
+            display_positions.append((pos_x, pos_y))
+
+        mean_x_m = (
+            sum(p[0] for p in display_positions) / len(entries)
+        )
+        mean_y_m = (
+            sum(p[1] for p in display_positions) / len(entries)
+        )
+        logger.debug(
+            f"Display centroid: "
+            f"({mean_x_m*1e3:.4f}, {mean_y_m*1e3:.4f}) mm"
+        )
+
+        for e, (pos_x, pos_y) in zip(entries, display_positions):
             e["display_x_um"] = (pos_x - mean_x_m) * 1e6
             e["display_y_um"] = (pos_y - mean_y_m) * 1e6
 
@@ -272,9 +310,23 @@ class SitePositionPlotWidget(StyledChartWidget):
             return
 
         px_x, px_y = pixel_size
-        img_h, img_w = image_array.shape[:2]
-        fov_x_m = px_x * img_w
-        fov_y_m = px_y * img_h
+        # Use the ORIGINAL image dimensions from metadata for
+        # FOV, not the downsampled array dimensions.  The image
+        # array is downsampled for display (max_dim=512) but the
+        # field of view must reflect the full acquisition size.
+        orig_w, orig_h = self._extract_image_size(xml_meta)
+        if orig_w is None:
+            # Fall back to downsampled dimensions (incorrect but
+            # better than nothing)
+            img_h, img_w = image_array.shape[:2]
+            orig_w = img_w
+            orig_h = img_h
+            logger.debug(
+                f"No BinaryResult.ImageSize for '{name}', "
+                f"using downsampled dimensions for FOV"
+            )
+        fov_x_m = px_x * orig_w
+        fov_y_m = px_y * orig_h
 
         entry["image_array"] = image_array
         entry["pixel_size_x_m"] = px_x
@@ -294,21 +346,25 @@ class SitePositionPlotWidget(StyledChartWidget):
             )
 
         # Extract pattern centre (in image pixel coordinates),
-        # convert to stage-relative offset in µm
+        # convert to stage-relative offset in µm.
+        # Pattern centre coordinates are in ORIGINAL pixel space,
+        # so use orig_w / orig_h (not the downsampled dimensions).
         pattern_px = self._extract_pattern_center(xml_meta)
         if pattern_px is not None and pixel_size is not None:
             # Pattern centre offset from image centre, in µm
             cx_px, cy_px = pattern_px
-            offset_x_m = (cx_px - img_w / 2) * px_x
-            offset_y_m = (cy_px - img_h / 2) * px_y
+            offset_x_m = (cx_px - orig_w / 2) * px_x
+            offset_y_m = (cy_px - orig_h / 2) * px_y
             entry["pattern_center_x_um"] = offset_x_m * 1e6
             # Negate Y: image pixel Y increases downward,
             # plot Y increases upward
             entry["pattern_center_y_um"] = -offset_y_m * 1e6
 
+        img_h, img_w = image_array.shape[:2]
         logger.debug(
             f"Image loaded for '{name}': "
-            f"{img_w}x{img_h} px, "
+            f"original {orig_w}x{orig_h} px, "
+            f"downsampled {img_w}x{img_h} px, "
             f"FOV {fov_x_m*1e6:.1f}x{fov_y_m*1e6:.1f} µm"
         )
 
@@ -373,6 +429,29 @@ class SitePositionPlotWidget(StyledChartWidget):
         if x_val is not None and y_val is not None:
             return x_val, y_val
         return None
+
+    @staticmethod
+    def _extract_image_size(
+        xml_meta: dict,
+    ) -> tuple[int, int]:
+        """Extract the original image dimensions from
+        ``XMLMetadata.BinaryResult.ImageSize``.
+
+        :param xml_meta: The ``XMLMetadata`` dictionary.
+        :return: ``(width, height)`` or ``(None, None)`` if not
+            available.
+        """
+        image_size = (
+            xml_meta.get("BinaryResult", {})
+            .get("ImageSize", {})
+        )
+        if not isinstance(image_size, dict):
+            return None, None
+        x_val = _extract_numeric(image_size.get("X"))
+        y_val = _extract_numeric(image_size.get("Y"))
+        if x_val is not None and y_val is not None:
+            return int(x_val), int(y_val)
+        return None, None
 
     @staticmethod
     def _extract_stage_position(

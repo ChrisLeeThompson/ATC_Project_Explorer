@@ -67,6 +67,25 @@ def extract_image_metadata(image_path: Path) -> dict:
     # Basic file info (available for all formats)
     result["ImageInfo"] = _get_basic_info(image_path)
 
+    # Detect actual format from magic bytes and flag mismatches.
+    # The FEI instrument software may write JPEG data with a
+    # ``.png`` extension; this prevents embedded XML recovery.
+    try:
+        raw_head = image_path.read_bytes()[:8]
+        actual = _detect_actual_format(raw_head)
+        if actual is not None:
+            result["ImageInfo"]["ActualFormat"] = actual.upper()
+            if (
+                actual == "jpeg"
+                and image_path.suffix.lower() == ".png"
+            ):
+                result["ImageInfo"]["FormatNote"] = (
+                    "File is JPEG despite .png extension — "
+                    "embedded XML metadata is not available"
+                )
+    except OSError:
+        pass
+
     suffix = image_path.suffix.lower()
 
     # TIF-specific metadata (TIFF tags)
@@ -229,12 +248,35 @@ def _extract_embedded_xml_metadata(
         )
         return None
 
-    # Locate the outer <Metadata ...>...</Metadata> block
-    start_marker = b"<Metadata "
+    # Detect actual file format vs. extension.  The FEI
+    # instrument software sometimes writes JPEG data with a
+    # ``.png`` extension.  JPEG files cannot carry the raw
+    # embedded XML that real PNG files contain, so log a
+    # diagnostic and bail early.
+    actual_format = _detect_actual_format(raw)
+    if actual_format == "jpeg" and image_path.suffix.lower() == ".png":
+        logger.debug(
+            f"File is JPEG despite .png extension, no "
+            f"embedded XML possible: {image_path.name}"
+        )
+        return None
+
+    # Locate the outer <Metadata ...>...</Metadata> block.
+    # Try several start forms to accommodate FEI XML with or
+    # without namespace attributes on the root element.
     end_marker = b"</Metadata>"
 
-    start_idx = raw.find(start_marker)
+    start_idx = -1
+    for start_marker in (b"<Metadata ", b"<Metadata>"):
+        start_idx = raw.find(start_marker)
+        if start_idx != -1:
+            break
+
     if start_idx == -1:
+        logger.debug(
+            f"No embedded XML metadata found in: "
+            f"{image_path.name}"
+        )
         return None
 
     end_idx = raw.find(end_marker, start_idx)
@@ -271,6 +313,28 @@ def _extract_embedded_xml_metadata(
         result["XMLMetadata"] = parsed.get("Metadata", parsed)
 
     return result if result else None
+
+
+# -----------------------------------------------------------------
+# File Format Detection
+# -----------------------------------------------------------------
+
+def _detect_actual_format(raw: bytes) -> str | None:
+    """Detect the actual image format from magic bytes.
+
+    Returns ``"jpeg"``, ``"png"``, ``"tiff"``, or *None* if
+    the format is not recognised.
+
+    :param raw: Raw file bytes (only the first 8 are inspected).
+    :return: Format string or *None*.
+    """
+    if raw[:2] == b"\xff\xd8":
+        return "jpeg"
+    if raw[:4] == b"\x89PNG":
+        return "png"
+    if raw[:2] in (b"II", b"MM"):
+        return "tiff"
+    return None
 
 
 # -----------------------------------------------------------------
