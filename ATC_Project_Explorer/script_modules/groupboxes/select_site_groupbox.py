@@ -10,11 +10,13 @@ The groupbox includes:
 import logging
 from pathlib import Path
 from PySide6.QtWidgets import (
-    QGroupBox, QVBoxLayout
+    QGroupBox, QHBoxLayout, QVBoxLayout
 )
 from PySide6.QtCore import Qt, Signal, Slot
 from script_modules.app_styles import AppStyles
-from script_modules.widgets.button_widgets import OpenInNewWindowButton
+from script_modules.widgets.button_widgets import (
+    OpenInNewWindowButton, PreviousButton, NextButton
+)
 from script_modules.widgets.combobox_widgets import LamellaSiteComboBox
 
 
@@ -39,13 +41,22 @@ class SelectSiteGroupBox(QGroupBox):
         self.lamella_site_combobox = LamellaSiteComboBox(parent=self)
         # Button (disabled until site combobox is populated)
         self.open_in_new_window_button = OpenInNewWindowButton(parent=self)
+        self.previous_button = PreviousButton(parent=self)
+        self.next_button = NextButton(parent=self)
         self.open_in_new_window_button.setEnabled(False)
+        self.previous_button.setEnabled(False)
+        self.next_button.setEnabled(False)
     
     def _setup_layout(self):
         # Layout
         main_layout = QVBoxLayout(self)
+        # Previous and next buttons in horizontal layout
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addWidget(self.previous_button)
+        buttons_layout.addWidget(self.next_button)
         # Add widgets to layout
         main_layout.addWidget(self.lamella_site_combobox)
+        main_layout.addLayout(buttons_layout)
         main_layout.addWidget(self.open_in_new_window_button)
         main_layout.setContentsMargins(
             AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,

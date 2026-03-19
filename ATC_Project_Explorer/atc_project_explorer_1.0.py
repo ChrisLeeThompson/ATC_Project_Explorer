@@ -190,6 +190,13 @@ class MainWindow(QMainWindow):
         self.select_site_groupbox.lamella_site_combobox.activated.connect(
             self._on_site_selected
         )
+        # Previous and next site buttons
+        self.select_site_groupbox.previous_button.clicked.connect(
+            self._on_previous_site
+        )
+        self.select_site_groupbox.next_button.clicked.connect(
+            self._on_next_site
+        )
         # Open in New Window button
         self.select_site_groupbox.open_in_new_window_button.clicked.connect(
             self._on_open_in_new_window
@@ -519,6 +526,7 @@ class MainWindow(QMainWindow):
         combobox.setCurrentIndex(0)
         # Enable the "Open In New Window" button now that data is loaded
         self.select_site_groupbox.open_in_new_window_button.setEnabled(True)
+        self._update_site_nav_buttons()
         logger.info(
             f"Site combobox populated: {GLOBAL_SITE_LABEL} + "
             f"{len(self._site_names)} site(s)"
@@ -558,6 +566,26 @@ class MainWindow(QMainWindow):
                 self.site_panel.populate(site_data)
             self.panel_stack.setCurrentIndex(1)
             logger.info(f"Site selected: {selected_text}")
+
+        self._update_site_nav_buttons()
+    
+    @Slot()
+    def _on_previous_site(self) -> None:
+        """Select the previous site in the combo box, if available."""
+        combobox = self.select_site_groupbox.lamella_site_combobox
+        current_index = combobox.currentIndex()
+        if current_index > 0:
+            combobox.setCurrentIndex(current_index - 1)
+            self._on_site_selected(current_index - 1)
+    
+    @Slot()
+    def _on_next_site(self) -> None:
+        """Select the next site in the combo box, if available."""
+        combobox = self.select_site_groupbox.lamella_site_combobox
+        current_index = combobox.currentIndex()
+        if current_index < combobox.count() - 1:
+            combobox.setCurrentIndex(current_index + 1)
+            self._on_site_selected(current_index + 1)
     
     @Slot(str)
     def _on_atlas_site_selected(self, site_name: str) -> None:
@@ -743,6 +771,15 @@ class MainWindow(QMainWindow):
     # -----------------------------------------------------------------
     # Helpers
     # -----------------------------------------------------------------
+
+    def _update_site_nav_buttons(self) -> None:
+        """Enable or disable the previous/next site buttons based
+        on the current combo box index."""
+        combobox = self.select_site_groupbox.lamella_site_combobox
+        index = combobox.currentIndex()
+        count = combobox.count()
+        self.select_site_groupbox.previous_button.setEnabled(index > 0)
+        self.select_site_groupbox.next_button.setEnabled(index < count - 1)
 
     def _get_project_name(self) -> str:
         """Extract the project name from the consolidated metadata.
