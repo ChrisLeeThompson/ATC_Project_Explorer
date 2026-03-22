@@ -14,9 +14,14 @@ For each site the parser:
 2. Groups match-information image filenames by activity name
    (parsed from the filename, e.g.
    ``"2025-10-29-14-11-48-Rough-Milling-match-information-image.png"``
-   → ``"Rough Milling"``).
-3. Reads the **most recent** image per activity group and
-   extracts ``PatterningInformation`` rectangle geometry and
+   → ``"Rough Milling"``).  Activities that never contain
+   patterning data (e.g. Eucentric Tilt, Reference Definition)
+   are skipped by keyword matching.
+3. Reads the **most recent** image per activity group.  A quick
+   byte scan for the ``PatterningInformation`` marker is
+   performed before full XML parsing to skip files without
+   pattern data.
+4. Extracts ``PatterningInformation`` rectangle geometry and
    ``Metrics.MeasuredBeamCurrent`` from the embedded FEI XML
    metadata.
 
@@ -62,6 +67,23 @@ _FILENAME_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Activity name substrings (lowercase) that never contain
+# PatterningInformation.  These are skipped during grouping
+# to avoid unnecessary file reads and XML parsing.
+_SKIP_ACTIVITY_KEYWORDS = frozenset({
+    "eucentric tilt",
+    "milling angle",
+    "reference definition",
+    "reference redefinition",
+    "electron image",
+    "electron reference",
+    "image acquisition",
+})
+
+# Byte marker used for a quick pre-filter scan before
+# committing to full XML parsing.
+_PATTERNING_MARKER = b"PatterningInformation"
+
 
 # -----------------------------------------------------------------
 # Public API
@@ -74,25 +96,17 @@ def extract_site_pattern_data(
     """Extract patterning data for a single site.
 
     Scans the ``PrecisePositioningLogImages`` directory, groups
-    images by activity name, and extracts patterning rectangle
-    geometry plus supplementary metadata.
-
-    The extraction strategy is driven by the **pattern type**:
-
-    - ``RegularCrossSection``: front and rear trench heights
-      can differ, so separate entries are created with
-      ``"(Front)"`` / ``"(Rear)"`` suffixes when multiple
-      ``AutomationMessage`` values are found.
-    - All other types: only the most recent image is read
-      (heights are identical for front and rear).
+    images by activity name (skipping activities that never have
+    patterns), and extracts patterning rectangle geometry plus
+    supplementary metadata from the most recent image per
+    activity.
 
     :param image_directories: The ``"ImageDirectories"`` list
         from a single site entry in the consolidated metadata.
     :param project_root: Absolute path to the ATC project root
         directory, used to resolve relative image paths.
-    :return: List of pattern data dicts, one per unique pattern
-        within each activity.  Empty list if no patterning data
-        is found.
+    :return: List of pattern data dicts, one per activity that
+        has patterning data.  Empty list if none found.
     """
     # Locate the PrecisePositioningLogImages directory
     rel_paths = _find_precise_pos_paths(image_directories)
@@ -149,6 +163,10 @@ def _group_by_activity(
     hyphenated form to space-separated (e.g.
     ``"Rough-Milling"`` → ``"Rough Milling"``).
 
+    Activities whose names match any keyword in
+    ``_SKIP_ACTIVITY_KEYWORDS`` are excluded, since they never
+    contain patterning data.
+
     :param rel_paths: Sorted list of relative image paths.
     :return: Ordered dict mapping activity names to their
         list of relative paths (preserving sort order).
@@ -176,6 +194,11 @@ def _group_by_activity(
             .replace("-", " ")
             .replace("\x00", " - ")
         )
+
+        # Skip activities that never have patterning data
+        name_lower = activity_name.lower()
+        if any(kw in name_lower for kw in _SKIP_ACTIVITY_KEYWORDS):
+            continue
 
         if activity_name not in groups:
             groups[activity_name] = []
@@ -247,6 +270,10 @@ def _extract_from_image(
 ) -> dict | None:
     """Extract pattern data from a single image file.
 
+    Performs a quick byte scan for the ``PatterningInformation``
+    marker before committing to full XML parsing.  Files that
+    do not contain the marker are skipped immediately.
+
     Reads the image's embedded XML metadata and extracts:
 
     - ``PatterningInformation`` rectangles (type, size)
@@ -258,6 +285,16 @@ def _extract_from_image(
     :return: Pattern data dict, or *None* if no patterning
         information is present.
     """
+    # Quick byte scan: skip files that don't contain the
+    # PatterningInformation marker.  This avoids the cost
+    # of full XML parsing for images without pattern data.
+    try:
+        raw_bytes = image_path.read_bytes()
+    except OSError:
+        return None
+    if _PATTERNING_MARKER not in raw_bytes:
+        return None
+
     try:
         metadata = extract_xml_metadata(image_path)
     except Exception:
