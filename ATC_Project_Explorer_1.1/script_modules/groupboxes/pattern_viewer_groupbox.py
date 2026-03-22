@@ -164,6 +164,29 @@ def _format_value(raw) -> str:
     return s if s else _NA
 
 
+def _format_value_rounded(raw, decimals: int = 2) -> str:
+    """Parse a value+unit string, round the numeric part, and
+    return with the original unit preserved.
+
+    :param raw: Value string (e.g. ``"7.7774934 pA"``).
+    :param decimals: Number of decimal places.
+    :return: Formatted string like ``"7.78 pA"`` or ``"N/A"``.
+    """
+    if raw is None:
+        return _NA
+    raw_str = str(raw).strip()
+    if not raw_str:
+        return _NA
+    result = parse_numeric_value(raw_str)
+    if result is None:
+        return raw_str
+    value, unit = result
+    rounded = round(value, decimals)
+    if unit:
+        return f"{rounded} {unit}"
+    return str(rounded)
+
+
 def _format_um_rounded(raw, decimals: int = 2) -> str:
     """Parse a value+unit string, convert to µm, round, and
     format for display.
@@ -331,7 +354,7 @@ def _build_display_entries(site_data: dict) -> list[dict]:
         )
 
         # Measured beam current (from image metadata)
-        measured_beam = _format_value(
+        measured_beam = _format_value_rounded(
             pd.get("MeasuredBeamCurrent")
         )
 
