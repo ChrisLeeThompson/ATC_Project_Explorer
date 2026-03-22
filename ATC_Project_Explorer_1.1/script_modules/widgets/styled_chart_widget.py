@@ -52,7 +52,6 @@ from matplotlib.patches import Rectangle
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QSizePolicy
 )
-from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor
 from script_modules.app_styles import AppStyles
 
 
@@ -154,38 +153,7 @@ class StyledChartWidget(QWidget):
             }}
             """
         )
-        self._recolor_toolbar_icons(self._toolbar)
-
-    @staticmethod
-    def _recolor_toolbar_icons(toolbar, color_hex: str = None):
-        """Repaint toolbar action icons to a consistent color.
-
-        Ensures button icons render identically on both light
-        and dark OS themes by replacing all opaque pixels with
-        the target color.
-
-        :param toolbar: ``NavigationToolbar2QT`` instance.
-        :param color_hex: Hex color string.  Defaults to
-            ``AppStyles.Colors.TEXT_PRIMARY``.
-        """
-        if color_hex is None:
-            color_hex = AppStyles.Colors.TEXT_PRIMARY
-        color = QColor(color_hex)
-        for action in toolbar.actions():
-            icon = action.icon()
-            if icon.isNull():
-                continue
-            sizes = icon.availableSizes()
-            if not sizes:
-                continue
-            pixmap = icon.pixmap(sizes[0])
-            painter = QPainter(pixmap)
-            painter.setCompositionMode(
-                QPainter.CompositionMode.CompositionMode_SourceIn
-            )
-            painter.fillRect(pixmap.rect(), color)
-            painter.end()
-            action.setIcon(QIcon(pixmap))
+        AppStyles.apply_toolbar_icon_color(self._toolbar)
 
     def _style_axes(self):
         """Apply dark theme styling to the axes.

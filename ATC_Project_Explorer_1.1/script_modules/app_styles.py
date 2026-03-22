@@ -149,7 +149,7 @@ class StyleDimensions:
     PLOT_TOOLTIP_FONT_SIZE = 10
     # Pattern viewer dimensions
     PATTERN_VIEWER_MINIMUM_HEIGHT = 460
-    PATTERN_VIEWER_LEFT_COLUMN_WIDTH = 360
+    PATTERN_VIEWER_LEFT_COLUMN_WIDTH = 380
     PATTERN_VIEWER_RIGHT_COLUMN_WIDTH = 220
     # Image viewer dimensions
     IMAGE_VIEWER_CANVAS_MINIMUM_HEIGHT = 200
@@ -1042,3 +1042,56 @@ class AppStyles:
     LineEdit = LineEditStyles
     TextEdit = TextEditStyles
     TreeWidget = TreeWidgetStyles
+
+    @staticmethod
+    def apply_toolbar_icon_color(toolbar, color: str = StyleColors.TEXT_PRIMARY) -> None:
+        """Force all NavigationToolbar2QT icons to a specific color.
+
+        Matplotlib toolbar icons are dark-on-transparent PNGs. On Windows with
+        a light system theme Qt may also apply palette tinting, leaving icons
+        dark against the app's dark toolbar background. This method repaints
+        every action icon using SourceIn composition: the icon silhouette
+        (alpha channel) is preserved while all opaque pixels are filled with
+        `color`, making the result theme-independent.
+
+        Call this once immediately after ``NavigationToolbar2QT(canvas, parent)``
+        is constructed.
+
+        Args:
+            toolbar: A ``NavigationToolbar2QT`` instance.
+            color:   Any Qt-parseable color string (default: ``TEXT_PRIMARY``
+                     white, ``"#ffffff"``).
+        """
+        from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+        from PySide6.QtCore import Qt
+
+        target_color = QColor(color)
+        icon_size = toolbar.iconSize()
+
+        for action in toolbar.actions():
+            icon = action.icon()
+            if icon.isNull():
+                continue
+
+            # Prefer the exact icon size used by the toolbar; fall back to the
+            # first available size if the toolbar size is not listed.
+            sizes = icon.availableSizes()
+            size = icon_size if icon_size in sizes or not sizes else sizes[0]
+
+            source_pm = icon.pixmap(size)
+            if source_pm.isNull():
+                continue
+
+            # Paint a new pixmap: draw the original (preserving shape), then
+            # flood-fill the opaque region with the target colour.
+            colored_pm = QPixmap(source_pm.size())
+            colored_pm.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(colored_pm)
+            painter.drawPixmap(0, 0, source_pm)
+            painter.setCompositionMode(
+                QPainter.CompositionMode.CompositionMode_SourceIn
+            )
+            painter.fillRect(colored_pm.rect(), target_color)
+            painter.end()
+
+            action.setIcon(QIcon(colored_pm))
