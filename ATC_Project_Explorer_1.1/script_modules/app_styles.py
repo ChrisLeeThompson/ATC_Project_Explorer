@@ -33,13 +33,14 @@ def _vertical_scrollbar(bg_color: str, prefix: str = "") -> str:
                 background-color: {bg_color};
                 width: {StyleDimensions.SCROLLBAR_WIDTH};
                 margin: 0px;
-                border-radius: 0px;
+                border-radius: 6px;
             }}
             {p}QScrollBar::handle:vertical {{
                 background-color: {StyleColors.BUTTON_BG};
-                border-radius: 6px;
+                border-radius: 4px;
                 min-height: {StyleDimensions.SCROLLBAR_HANDLE_MIN};
                 margin: 2px;
+                border: none;
             }}
             {p}QScrollBar::handle:vertical:hover {{
                 background-color: {StyleColors.BUTTON_HOVER};
@@ -75,9 +76,10 @@ def _horizontal_scrollbar(bg_color: str, prefix: str = "") -> str:
             }}
             {p}QScrollBar::handle:horizontal {{
                 background-color: {StyleColors.BUTTON_BG};
-                border-radius: 6px;
+                border-radius: 4px;
                 min-width: {StyleDimensions.SCROLLBAR_HANDLE_MIN};
                 margin: 2px;
+                border: none;
             }}
             {p}QScrollBar::handle:horizontal:hover {{
                 background-color: {StyleColors.BUTTON_HOVER};
