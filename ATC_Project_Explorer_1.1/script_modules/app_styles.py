@@ -143,6 +143,7 @@ class StyleDimensions:
     COMBOBOX_WIDTH = 180
     SCROLLBAR_WIDTH = "12px"
     SCROLLBAR_HANDLE_MIN = "30px"
+    SPLITTER_HANDLE_WIDTH = 6
     # Plot dimensions
     PLOT_MINIMUM_HEIGHT = 400
     PLOT_LINE_WIDTH = 1.0
@@ -150,8 +151,9 @@ class StyleDimensions:
     PLOT_LABEL_FONT_SIZE = 10
     PLOT_TOOLTIP_FONT_SIZE = 10
     # Pattern viewer dimensions
-    PATTERN_VIEWER_MINIMUM_HEIGHT = 460
-    PATTERN_VIEWER_LEFT_COLUMN_WIDTH = 380
+    PATTERN_VIEWER_MINIMUM_HEIGHT = 620
+    PATTERN_VIEWER_CANVAS_MINIMUM_HEIGHT = 400
+    PATTERN_VIEWER_LEFT_COLUMN_WIDTH = 400
     PATTERN_VIEWER_RIGHT_COLUMN_WIDTH = 220
     # Image viewer dimensions
     IMAGE_VIEWER_CANVAS_MINIMUM_HEIGHT = 200
@@ -188,6 +190,7 @@ class ApplicationText:
     
 
 class ToolTips:
+
     @staticmethod
     def default() -> str:
         """Shared tooltip style block for widget stylesheets."""
@@ -534,6 +537,29 @@ class ButtonStyles:
                 color: {StyleColors.TEXT_DISABLED};
             }}
             {ToolTips.default()}
+        """
+    
+    @staticmethod
+    def reset_view() -> str:
+        return f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {StyleColors.TEXT_DISABLED};
+                border: none;
+                border-radius: {StyleDimensions.BORDER_RADIUS_SMALL};
+                font-size: 14px;
+                font-weight: bold;
+                padding: 0px;
+                margin: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: {StyleColors.BUTTON_BG};
+                color: {StyleColors.TEXT_PRIMARY};
+            }}
+            QPushButton:pressed {{
+                background-color: {StyleColors.BUTTON_PRESSED};
+                color: {StyleColors.TEXT_PRIMARY};
+            }}
         """
 
     @staticmethod
@@ -1025,6 +1051,29 @@ class TextEditStyles:
         """
 
 
+class SplitterStyles:
+
+    @staticmethod
+    def horizontal() -> str:
+        """Style for a horizontal QSplitter used in the image viewer."""
+        return f"""
+            QSplitter::handle:horizontal {{
+                background-color: {StyleColors.BUTTON_BG};
+                width: {StyleDimensions.SPLITTER_HANDLE_WIDTH}px;
+                border-radius: 4px;
+                margin-top: 0px;
+                margin-bottom: 0px;
+                border: none;
+            }}
+            QSplitter::handle:horizontal:hover {{
+                background-color: {StyleColors.BUTTON_HOVER};
+            }}
+            QSplitter::handle:horizontal:pressed {{
+                background-color: {StyleColors.BUTTON_PRESSED};
+            }}
+        """
+
+
 class AppStyles:
 
     Colors = StyleColors
@@ -1044,6 +1093,7 @@ class AppStyles:
     LineEdit = LineEditStyles
     TextEdit = TextEditStyles
     TreeWidget = TreeWidgetStyles
+    Splitter = SplitterStyles
 
     @staticmethod
     def apply_toolbar_icon_color(toolbar, color: str = StyleColors.TEXT_PRIMARY) -> None:

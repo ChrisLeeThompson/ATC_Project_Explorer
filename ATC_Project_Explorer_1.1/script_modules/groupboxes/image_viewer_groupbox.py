@@ -56,7 +56,7 @@ from matplotlib.figure import Figure
 from matplotlib.patches import Rectangle as MplRectangle
 
 from PySide6.QtWidgets import (
-    QGroupBox, QVBoxLayout, QHBoxLayout, QWidget,
+    QGroupBox, QVBoxLayout, QHBoxLayout, QSplitter, QWidget,
     QLabel, QSizePolicy, QCheckBox,
 )
 from PySide6.QtCore import Qt, Slot
@@ -588,11 +588,15 @@ class ImageViewerGroupBox(QGroupBox):
         right_container.setLayout(right_column)
 
         # -- Main layout --
-        content_layout = QHBoxLayout()
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(AppStyles.Dimensions.LAYOUT_VSPACING)
-        content_layout.addWidget(left_container)
-        content_layout.addWidget(right_container, 1)
+        self._splitter = QSplitter(Qt.Orientation.Horizontal, parent=self)
+        self._splitter.setHandleWidth(
+            AppStyles.Dimensions.SPLITTER_HANDLE_WIDTH
+        )
+        self._splitter.setStyleSheet(AppStyles.Splitter.horizontal())
+        self._splitter.addWidget(left_container)
+        self._splitter.addWidget(right_container)
+        self._splitter.setStretchFactor(0, 0)  # left: don't absorb resize
+        self._splitter.setStretchFactor(1, 1)  # right: absorbs resize
 
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(
@@ -602,7 +606,7 @@ class ImageViewerGroupBox(QGroupBox):
             AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
         )
         main_layout.setSpacing(AppStyles.Dimensions.LAYOUT_VSPACING)
-        main_layout.addLayout(content_layout, 1)
+        main_layout.addWidget(self._splitter, 1)
         self.setStyleSheet(AppStyles.GroupBox.with_title_bold())
 
         # Reserve the populated height so the groupbox does not

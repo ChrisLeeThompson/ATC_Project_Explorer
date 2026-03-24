@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QLabel,
     QGridLayout, QSizePolicy
 )
+from PySide6.QtCore import Qt
 from script_modules.app_styles import AppStyles
 from script_modules.consolidated_data_reader import get_site_stats
 

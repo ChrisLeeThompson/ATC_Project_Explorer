@@ -39,10 +39,10 @@ Milling) produce distinct entries with ``"(Front)"`` or
 import logging
 from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QGridLayout,
-    QWidget, QLabel, QSizePolicy,
+    QWidget, QLabel, QSizePolicy, QSplitter,
     QScrollArea, QButtonGroup,
 )
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, QEvent, Slot
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QCursor
 from script_modules.app_styles import AppStyles
 from script_modules.consolidated_data_reader import (
@@ -548,7 +548,7 @@ class PatternCanvasWidget(QWidget):
         self._drag_start_pan_x: float = 0.0
         self._drag_start_pan_y: float = 0.0
 
-        self.setMinimumHeight(AppStyles.Dimensions.PATTERN_VIEWER_MINIMUM_HEIGHT)
+        self.setMinimumHeight(AppStyles.Dimensions.PATTERN_VIEWER_CANVAS_MINIMUM_HEIGHT)
         self.setMinimumWidth(200)
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
@@ -1123,16 +1123,18 @@ class PatternViewerGroupBox(QGroupBox):
             _PLACEHOLDER_LABEL, parent=self
         )
         self._info_label.setStyleSheet(AppStyles.Label.default())
-        self._info_label.setAlignment(
-            Qt.AlignmentFlag.AlignCenter
-        )
         self._info_label.setVisible(True)
 
         # -- Left column: info panel --
         self._info_labels: dict[str, tuple[QLabel, QLabel]] = {}
         self._info_container = QWidget(parent=self)
         info_layout = QGridLayout(self._info_container)
-        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setContentsMargins(
+            AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
+            AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
+            AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
+            AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
+        )
         info_layout.setSpacing(
             AppStyles.Dimensions.LAYOUT_VSPACING
         )
@@ -1171,13 +1173,16 @@ class PatternViewerGroupBox(QGroupBox):
 
         # -- Centre column: canvas --
         self._canvas = PatternCanvasWidget(parent=self)
-        self._reset_view_button = ResetViewButton(parent=self)
+        self._reset_view_button = ResetViewButton(
+            parent=self._canvas
+        )
         self._reset_view_button.setFocusPolicy(
             Qt.FocusPolicy.NoFocus
         )
         self._reset_view_button.clicked.connect(
             self._on_reset_view
         )
+        self._canvas.installEventFilter(self)
 
         # -- Right column: button scroll area --
         self._button_group = QButtonGroup(self)
@@ -1205,7 +1210,12 @@ class PatternViewerGroupBox(QGroupBox):
         )
 
     def _setup_layout(self):
-        """Arrange widgets in a three-column layout."""
+        """Arrange widgets in a three-column layout.
+
+        A horizontal ``QSplitter`` separates the left info panel
+        from the centre+right area, allowing the user to drag the
+        boundary to expand or contract the info panel.
+        """
         # Left column
         left_column = QVBoxLayout()
         left_column.setContentsMargins(0, 0, 0, 0)
@@ -1215,42 +1225,58 @@ class PatternViewerGroupBox(QGroupBox):
 
         left_container = QWidget()
         left_container.setLayout(left_column)
-        left_container.setFixedWidth(AppStyles.Dimensions.PATTERN_VIEWER_LEFT_COLUMN_WIDTH)
+        left_container.setMinimumWidth(
+            AppStyles.Dimensions.PATTERN_VIEWER_LEFT_COLUMN_WIDTH
+        )
 
-        # Right column
+        # Right column (toggle buttons)
         right_container = QWidget()
         right_layout = QVBoxLayout(right_container)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
         right_layout.addWidget(self._button_scroll)
-        right_container.setFixedWidth(AppStyles.Dimensions.PATTERN_VIEWER_RIGHT_COLUMN_WIDTH)
+        right_container.setFixedWidth(
+            AppStyles.Dimensions.PATTERN_VIEWER_RIGHT_COLUMN_WIDTH
+        )
 
-        # Centre column: canvas + reset button (right-aligned)
-        reset_row = QHBoxLayout()
-        reset_row.setContentsMargins(0, 0, 0, 0)
-        reset_row.addStretch(1)
-        reset_row.addWidget(self._reset_view_button)
-
+        # Centre column: canvas (reset button overlaid as child)
         centre_column = QVBoxLayout()
         centre_column.setContentsMargins(0, 0, 0, 0)
-        centre_column.setSpacing(
-            AppStyles.Dimensions.LAYOUT_VSPACING
-        )
+        centre_column.setSpacing(0)
         centre_column.addWidget(self._canvas, 1)
-        centre_column.addLayout(reset_row)
 
         centre_container = QWidget()
         centre_container.setLayout(centre_column)
 
-        # Three-column layout
-        content_layout = QHBoxLayout()
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(
+        # Centre + right in a regular layout
+        centre_right_layout = QHBoxLayout()
+        centre_right_layout.setContentsMargins(0, 0, 0, 0)
+        centre_right_layout.setSpacing(
             AppStyles.Dimensions.LAYOUT_VSPACING
         )
-        content_layout.addWidget(left_container)
-        content_layout.addWidget(centre_container, 1)
-        content_layout.addWidget(right_container)
+        centre_right_layout.addWidget(centre_container, 1)
+        centre_right_layout.addWidget(right_container)
+
+        centre_right_container = QWidget()
+        centre_right_container.setLayout(centre_right_layout)
+
+        # Splitter: left info panel | centre+right area
+        self._splitter = QSplitter(
+            Qt.Orientation.Horizontal, parent=self
+        )
+        self._splitter.setHandleWidth(
+            AppStyles.Dimensions.SPLITTER_HANDLE_WIDTH
+        )
+        self._splitter.setStyleSheet(
+            AppStyles.Splitter.horizontal()
+        )
+        self._splitter.addWidget(left_container)
+        self._splitter.addWidget(centre_right_container)
+        self._splitter.setChildrenCollapsible(False)
+        # Left: don't absorb resize
+        self._splitter.setStretchFactor(0, 0)
+        # Right: absorbs resize
+        self._splitter.setStretchFactor(1, 1)
 
         # Main layout
         main_layout = QVBoxLayout(self)
@@ -1264,7 +1290,7 @@ class PatternViewerGroupBox(QGroupBox):
             AppStyles.Dimensions.LAYOUT_VSPACING
         )
         main_layout.addWidget(self._info_label)
-        main_layout.addLayout(content_layout, 1)
+        main_layout.addWidget(self._splitter, 1)
 
         self.setStyleSheet(AppStyles.GroupBox.with_title_bold())
         self.setMinimumHeight(
@@ -1335,6 +1361,27 @@ class PatternViewerGroupBox(QGroupBox):
         """Reset the canvas zoom and pan to fit all."""
         self._canvas.reset_view()
         self._canvas.update()
+
+    def eventFilter(self, obj, event):
+        """Reposition the reset-view button when the canvas
+        resizes so it stays pinned to the bottom-right corner.
+        """
+        if (
+            obj is self._canvas
+            and event.type() == QEvent.Type.Resize
+        ):
+            self._position_reset_button()
+        return super().eventFilter(obj, event)
+
+    def _position_reset_button(self) -> None:
+        """Pin the reset-view button to the bottom-right corner
+        of the canvas with a small inset margin."""
+        margin = 8
+        btn = self._reset_view_button
+        x = self._canvas.width() - btn.width() - margin
+        y = self._canvas.height() - btn.height() - margin
+        btn.move(x, y)
+        btn.raise_()
 
     # -----------------------------------------------------------------
     # Selection

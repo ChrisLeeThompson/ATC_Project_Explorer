@@ -2,7 +2,9 @@
 Module for styled button widgets.
 """
 from PySide6.QtWidgets import QPushButton
-from script_modules.app_styles import AppStyles
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, QSize
+from script_modules.app_styles import AppStyles, ASSETS_DIR
 
 
 class StyledButton(QPushButton):
@@ -62,10 +64,17 @@ class NextButton(StyledButton):
         super().__init__(parent, "Next")
 
 
-class ResetViewButton(StyledButton):
+class ResetViewButton(QPushButton):
 
     def __init__(self, parent=None):
-        super().__init__(parent, "Reset View")
+        super().__init__(parent)
+        icon_path = str(ASSETS_DIR / "reset_view_light-gray.svg")
+        self.setIcon(QIcon(icon_path))
+        self.setIconSize(QSize(24, 24))
+        self.setFixedSize(32, 32)
+        self.setToolTip("Reset view")
+        self.setStyleSheet(AppStyles.Button.reset_view() + AppStyles.AppToolTips.default())
+        # self.setCursor(Qt.CursorShape.PointingHandCursor)
 
 
 class PatternToggleButton(QPushButton):
