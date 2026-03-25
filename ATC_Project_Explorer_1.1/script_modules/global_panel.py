@@ -7,6 +7,8 @@ The module includes:
 - Scrollable QWidget
 - Groupboxes:
     - GlobalStatsGroupBox: Displays global project statistics
+    - GlobalSitePreviewGroupBox: Horizontally scrollable strip
+      of compact site-preview cards
 - Widgets:
     - DurationBarChartWidget: Horizontal stacked bar chart of
       per-site milling durations
@@ -14,12 +16,17 @@ The module includes:
       positions with optional SEM image montage
 """
 import logging
+from pathlib import Path
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal
 from script_modules.app_styles import AppStyles
 from script_modules.groupboxes.global_stats_groupbox import GlobalStatsGroupBox
+from script_modules.groupboxes.global_site_preview_groupbox import (
+    GlobalSitePreviewGroupBox,
+)
 from script_modules.widgets.duration_barchart_widget import DurationBarChartWidget
 from script_modules.widgets.site_position_plot_widget import SitePositionPlotWidget
 
@@ -29,8 +36,9 @@ logger = logging.getLogger(__name__)
 
 class GlobalPanel(QWidget):
 
-    # Re-exposed from SitePositionPlotWidget so the main module
-    # can connect without reaching into child widgets.
+    # Re-exposed from SitePositionPlotWidget and
+    # GlobalSitePreviewGroupBox so the main module can connect
+    # without reaching into child widgets.
     site_selected = Signal(str)
     site_open_new_window = Signal(str)
 
@@ -47,6 +55,17 @@ class GlobalPanel(QWidget):
     # Public API
     # -----------------------------------------------------------------
 
+    def set_project_root(self, project_root: Path | None) -> None:
+        """Set the project root for resolving image paths in
+        the site preview cards.
+
+        :param project_root: Absolute path to the ATC project
+            root directory, or *None* to clear.
+        """
+        self.global_site_preview_groupbox.set_project_root(
+            project_root
+        )
+
     def populate(self, metadata: dict) -> None:
         """Populate all child groupboxes with consolidated metadata.
 
@@ -54,6 +73,7 @@ class GlobalPanel(QWidget):
             top-level keys ``"ProjectData"`` and ``"Sites"``.
         """
         self.global_stats_groupbox.populate(metadata)
+        self.global_site_preview_groupbox.populate(metadata)
         self.duration_bar_chart.populate(metadata)
         self.site_position_plot.populate(metadata)
         logger.info("GlobalPanel populated")
@@ -61,6 +81,7 @@ class GlobalPanel(QWidget):
     def clear(self) -> None:
         """Reset all child groupboxes to their default empty state."""
         self.global_stats_groupbox.clear()
+        self.global_site_preview_groupbox.clear()
         self.duration_bar_chart.clear()
         self.site_position_plot.clear()
         logger.info("GlobalPanel cleared")
@@ -72,6 +93,9 @@ class GlobalPanel(QWidget):
     def _create_widgets(self):
         """Create child groupboxes owned by this panel."""
         self.global_stats_groupbox = GlobalStatsGroupBox(parent=self)
+        self.global_site_preview_groupbox = (
+            GlobalSitePreviewGroupBox(parent=self)
+        )
         self.duration_bar_chart = DurationBarChartWidget(parent=self)
         self.site_position_plot = SitePositionPlotWidget(parent=self)
 
@@ -83,16 +107,18 @@ class GlobalPanel(QWidget):
         self.site_position_plot.site_open_new_window.connect(
             self.site_open_new_window
         )
+        self.global_site_preview_groupbox.site_selected.connect(
+            self.site_selected
+        )
 
     def _setup_layout(self):
         """Build the scroll area and internal content layout."""
-        # Top row: stats (fixed width) — ready for additional
-        # widgets to be added beside it in the future.
+        # Top row: stats (fixed width) + site previews (expanding)
         top_row = QHBoxLayout()
         top_row.setContentsMargins(0, 0, 0, 0)
         top_row.setSpacing(0)
         top_row.addWidget(self.global_stats_groupbox)
-        top_row.addStretch(1)
+        top_row.addWidget(self.global_site_preview_groupbox, 1)
 
         top_row_container = QWidget()
         top_row_container.setLayout(top_row)

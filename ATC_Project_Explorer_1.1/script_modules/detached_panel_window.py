@@ -13,6 +13,7 @@ Usage from MainWindow::
     window = DetachedPanelWindow.for_global(
         metadata=self._metadata,
         project_name=project_name,
+        project_root=self._project_root,
         parent=self,
     )
     window.show()
@@ -99,12 +100,15 @@ class DetachedPanelWindow(QWidget):
         cls,
         metadata: dict,
         project_name: str,
+        project_root: Path | None = None,
         parent=None,
     ) -> "DetachedPanelWindow":
         """Create a detached window showing the global panel.
 
         :param metadata: Full consolidated metadata dictionary.
         :param project_name: Project name shown in the header.
+        :param project_root: Absolute path to the ATC project
+            root, needed for site preview image resolution.
         :param parent: Optional parent widget.
         :return: Ready-to-show DetachedPanelWindow instance.
         """
@@ -118,6 +122,8 @@ class DetachedPanelWindow(QWidget):
         )
 
         panel = GlobalPanel(parent=window)
+        if project_root is not None:
+            panel.set_project_root(project_root)
         panel.populate(metadata)
 
         window._panel = panel

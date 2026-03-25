@@ -30,10 +30,11 @@ Image selection logic:
   ``"Polishing"`` but not ``"electron"`` (case-insensitive),
   corresponding to the ion beam polishing image.
 
-Both images are displayed as simple thumbnails with no
-matplotlib toolbar.  File names are shown as tooltips on
-hover.  A centred "Image not available" placeholder is
-shown when the target image cannot be found or loaded.
+Both images are displayed as lightweight QPixmap thumbnails
+with no matplotlib overhead.  File names are shown as
+tooltips on hover.  A centred "Image not available"
+placeholder is shown when the target image cannot be found
+or loaded.
 
 Each preview image is clickable: hovering shows a subtle
 border and a pointing-hand cursor; clicking emits the
@@ -44,11 +45,6 @@ can scroll to and select the image in the full image viewer.
 import logging
 from pathlib import Path
 
-import numpy as np
-import matplotlib.image as mpimg
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-from matplotlib.figure import Figure
-
 from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QFrame,
     QSizePolicy,
@@ -56,58 +52,15 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCursor
 from script_modules.app_styles import AppStyles
+from script_modules.preview_image_helpers import (
+    PreviewLabel,
+    find_left_image,
+    find_right_image,
+    load_preview_pixmap,
+)
 
 
 logger = logging.getLogger(__name__)
-
-
-# Preview thumbnail max dimension (pixels)
-_PREVIEW_MAX_DIM = 512
-
-# Placeholder text
-_PLACEHOLDER = "Image not available"
-
-
-# -----------------------------------------------------------------
-# Helpers
-# -----------------------------------------------------------------
-
-def _load_preview(path: Path) -> np.ndarray | None:
-    """Load an image for preview display.
-
-    Handles JPEG files saved with a ``.png`` extension by
-    falling back to PIL when matplotlib's reader fails.
-
-    :param path: Absolute path to the image file.
-    :return: Numpy array downsampled to ``_PREVIEW_MAX_DIM``,
-        or *None* on failure.
-    """
-    try:
-        img = mpimg.imread(str(path))
-    except Exception:
-        try:
-            from PIL import Image
-            img = np.array(Image.open(path))
-        except Exception:
-            logger.debug(
-                f"Failed to read preview image: {path.name}",
-                exc_info=True,
-            )
-            return None
-
-    if img.ndim >= 2:
-        h, w = img.shape[:2]
-        factor = max(1, max(h, w) // _PREVIEW_MAX_DIM)
-        if factor > 1:
-            img = img[::factor, ::factor]
-
-    return img
-
-
-def _style_preview_axes(ax):
-    """Apply dark theme to a preview axes."""
-    ax.set_facecolor(AppStyles.Colors.MAIN_BG)
-    ax.set_axis_off()
 
 
 # -----------------------------------------------------------------
@@ -116,23 +69,26 @@ def _style_preview_axes(ax):
 
 class _ClickablePreviewFrame(QFrame):
     """QFrame wrapper that adds hover border and click detection
-    to a preview canvas.
+    to a :class:`PreviewLabel`.
 
     When ``clickable`` is True, entering the frame shows a
     subtle border and switches to a pointing-hand cursor.
-    Leaving restores the default appearance.
+    Leaving restores the default appearance.  Clicking emits
+    the :attr:`clicked` signal.
     """
 
-    def __init__(self, canvas: FigureCanvasQTAgg, parent=None):
+    clicked = Signal()
+
+    def __init__(self, label: PreviewLabel, parent=None):
         super().__init__(parent)
-        self._canvas = canvas
+        self._label = label
         self._clickable = False
         self._default_cursor = self.cursor()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(0)
-        layout.addWidget(canvas)
+        layout.addWidget(label)
 
         # Reserve border space with a transparent border so
         # the layout does not shift on hover.
@@ -181,6 +137,15 @@ class _ClickablePreviewFrame(QFrame):
         self._apply_border(False)
         self.setCursor(self._default_cursor)
         super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        """Emit :attr:`clicked` on left-click when clickable."""
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and self._clickable
+        ):
+            self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 # -----------------------------------------------------------------
@@ -234,8 +199,12 @@ class SitePreviewGroupBox(QGroupBox):
         directories = site_data.get("ImageDirectories", [])
         site_name = site_data.get("SiteName", "Unknown")
 
-        left_path, left_dir = self._find_left_image(directories)
-        right_path, right_dir = self._find_right_image(directories)
+        left_path, left_dir = find_left_image(
+            directories, self._project_root
+        )
+        right_path, right_dir = find_right_image(
+            directories, self._project_root
+        )
 
         # Store source info for click-to-navigate
         self._left_dir_name = left_dir
@@ -250,29 +219,33 @@ class SitePreviewGroupBox(QGroupBox):
             f"left='{left_name}', right='{right_name}'"
         )
 
-        self._show_image(
-            self._left_ax, self._left_canvas, left_path,
+        # Load and display
+        left_pixmap = (
+            load_preview_pixmap(left_path)
+            if left_path is not None else None
         )
-        self._show_image(
-            self._right_ax, self._right_canvas, right_path,
+        right_pixmap = (
+            load_preview_pixmap(right_path)
+            if right_path is not None else None
+        )
+
+        self._left_label.set_preview(
+            left_pixmap,
+            tooltip=left_path.name if left_path else "",
+        )
+        self._right_label.set_preview(
+            right_pixmap,
+            tooltip=right_path.name if right_path else "",
         )
 
         # Enable click interaction when an image is loaded
         self._left_frame.set_clickable(left_path is not None)
         self._right_frame.set_clickable(right_path is not None)
 
-        self._left_canvas.draw_idle()
-        self._right_canvas.draw_idle()
-
     def clear(self) -> None:
         """Reset both preview panels to empty."""
-        for ax, canvas in [
-            (self._left_ax, self._left_canvas),
-            (self._right_ax, self._right_canvas),
-        ]:
-            ax.clear()
-            _style_preview_axes(ax)
-            canvas.setToolTip("")
+        self._left_label.clear_preview()
+        self._right_label.clear_preview()
 
         self._left_frame.set_clickable(False)
         self._right_frame.set_clickable(False)
@@ -281,54 +254,22 @@ class SitePreviewGroupBox(QGroupBox):
         self._right_dir_name = ""
         self._right_filename = ""
 
-        self._left_canvas.draw_idle()
-        self._right_canvas.draw_idle()
-
     # -----------------------------------------------------------------
     # Setup
     # -----------------------------------------------------------------
 
     def _create_widgets(self):
-        """Create the two preview canvases."""
-        _canvas_style = f"""
-            background-color: {AppStyles.Colors.MAIN_BG};
-        """
+        """Create the two preview labels and clickable frames."""
+        self._left_label = PreviewLabel(parent=self)
+        self._right_label = PreviewLabel(parent=self)
 
-        # Left preview (electron)
-        self._left_figure = Figure(
-            facecolor=AppStyles.Colors.MAIN_BG,
-            constrained_layout=True,
-        )
-        self._left_canvas = FigureCanvasQTAgg(self._left_figure)
-        self._left_canvas.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Ignored,
-        )
-        self._left_ax = self._left_figure.add_subplot(111)
-        _style_preview_axes(self._left_ax)
-        self._left_canvas.setStyleSheet(_canvas_style)
-
-        # Right preview (polishing)
-        self._right_figure = Figure(
-            facecolor=AppStyles.Colors.MAIN_BG,
-            constrained_layout=True,
-        )
-        self._right_canvas = FigureCanvasQTAgg(self._right_figure)
-        self._right_canvas.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Ignored,
-        )
-        self._right_ax = self._right_figure.add_subplot(111)
-        _style_preview_axes(self._right_ax)
-        self._right_canvas.setStyleSheet(_canvas_style)
-
-        # Wrap each canvas in a clickable frame for hover
+        # Wrap each label in a clickable frame for hover
         # border and click-to-navigate behaviour.
         self._left_frame = _ClickablePreviewFrame(
-            self._left_canvas, parent=self
+            self._left_label, parent=self
         )
         self._right_frame = _ClickablePreviewFrame(
-            self._right_canvas, parent=self
+            self._right_label, parent=self
         )
 
     def _setup_layout(self):
@@ -359,24 +300,17 @@ class SitePreviewGroupBox(QGroupBox):
     # -----------------------------------------------------------------
 
     def _connect_click_events(self):
-        """Connect matplotlib click events on both canvases."""
-        self._left_canvas.mpl_connect(
-            "button_press_event", self._on_left_clicked
+        """Connect frame click signals to navigation handlers."""
+        self._left_frame.clicked.connect(
+            self._on_left_clicked
         )
-        self._right_canvas.mpl_connect(
-            "button_press_event", self._on_right_clicked
+        self._right_frame.clicked.connect(
+            self._on_right_clicked
         )
 
-    def _on_left_clicked(self, event):
-        """Handle click on the left preview canvas.
-
-        :param event: Matplotlib button_press_event.
-        """
-        if (
-            event.button != 1
-            or not self._left_dir_name
-            or not self._left_filename
-        ):
+    def _on_left_clicked(self):
+        """Handle click on the left preview frame."""
+        if not self._left_dir_name or not self._left_filename:
             return
         logger.info(
             f"Preview click: '{self._left_filename}' "
@@ -386,16 +320,9 @@ class SitePreviewGroupBox(QGroupBox):
             self._left_dir_name, self._left_filename
         )
 
-    def _on_right_clicked(self, event):
-        """Handle click on the right preview canvas.
-
-        :param event: Matplotlib button_press_event.
-        """
-        if (
-            event.button != 1
-            or not self._right_dir_name
-            or not self._right_filename
-        ):
+    def _on_right_clicked(self):
+        """Handle click on the right preview frame."""
+        if not self._right_dir_name or not self._right_filename:
             return
         logger.info(
             f"Preview click: '{self._right_filename}' "
@@ -404,191 +331,3 @@ class SitePreviewGroupBox(QGroupBox):
         self.preview_clicked.emit(
             self._right_dir_name, self._right_filename
         )
-
-    # -----------------------------------------------------------------
-    # Image Selection
-    # -----------------------------------------------------------------
-
-    def _find_left_image(
-        self, directories: list[dict]
-    ) -> tuple[Path | None, str]:
-        """Find the left preview image path.
-
-        Prefers the last image from ``LamellaEvaluationImages``.
-        Falls back to the last electron match image from
-        ``PrecisePositioningLogImages``.
-
-        :param directories: Site's ImageDirectories list.
-        :return: Tuple of (absolute image path or *None*, source
-            directory name).
-        """
-        # Try LamellaEvaluationImages first
-        dir_name = "LamellaEvaluationImages"
-        path = self._last_image_in_directory(
-            directories, dir_name
-        )
-        if path is not None:
-            logger.debug(
-                f"Left preview: using LamellaEvaluationImages"
-            )
-            return path, dir_name
-
-        # Fallback: last electron image from positioning log
-        dir_name = "PrecisePositioningLogImages"
-        logger.debug(
-            "Left preview: LamellaEvaluationImages unavailable, "
-            "falling back to PrecisePositioningLogImages"
-        )
-        return self._last_matching_image(
-            directories,
-            dir_name,
-            "electron",
-        ), dir_name
-
-    def _find_right_image(
-        self, directories: list[dict]
-    ) -> tuple[Path | None, str]:
-        """Find the right preview image path.
-
-        Returns the last polishing match image (excluding electron
-        images) from ``PrecisePositioningLogImages``.
-
-        :param directories: Site's ImageDirectories list.
-        :return: Tuple of (absolute image path or *None*, source
-            directory name).
-        """
-        dir_name = "PrecisePositioningLogImages"
-        return self._last_matching_image(
-            directories,
-            dir_name,
-            "polishing",
-            exclude="electron",
-        ), dir_name
-
-    def _last_image_in_directory(
-        self,
-        directories: list[dict],
-        dir_name: str,
-    ) -> Path | None:
-        """Return the last image path from a named directory.
-
-        :param directories: Site's ImageDirectories list.
-        :param dir_name: Directory name to search for
-            (case-insensitive).
-        :return: Absolute path, or *None* if not found.
-        """
-        for directory in directories:
-            name = directory.get("DirectoryName", "")
-            if name.lower() != dir_name.lower():
-                continue
-            paths = directory.get("RelativeImagePaths", [])
-            if not paths:
-                logger.debug(
-                    f"No images in directory '{dir_name}'"
-                )
-                return None
-            if self._project_root is None:
-                logger.debug(
-                    "Project root not set — cannot resolve "
-                    f"'{dir_name}' image paths"
-                )
-                return None
-            rel = paths[-1].replace("\\", "/")
-            abs_path = self._project_root / Path(rel)
-            if abs_path.is_file():
-                return abs_path
-            logger.debug(
-                f"Preview file not found: {abs_path}"
-            )
-        return None
-
-    def _last_matching_image(
-        self,
-        directories: list[dict],
-        dir_name: str,
-        keyword: str,
-        exclude: str = "",
-    ) -> Path | None:
-        """Return the last image whose name contains *keyword*
-        from the named directory.
-
-        :param directories: Site's ImageDirectories list.
-        :param dir_name: Directory name to search for
-            (case-insensitive).
-        :param keyword: Substring to match in file names
-            (case-insensitive).
-        :param exclude: Substring to reject from file names
-            (case-insensitive).  Empty string disables exclusion.
-        :return: Absolute path, or *None* if not found.
-        """
-        for directory in directories:
-            name = directory.get("DirectoryName", "")
-            if name.lower() != dir_name.lower():
-                continue
-            paths = directory.get("RelativeImagePaths", [])
-            keyword_lower = keyword.lower()
-            exclude_lower = exclude.lower()
-            matches = [
-                p for p in paths
-                if keyword_lower in Path(p).name.lower()
-                and (
-                    not exclude_lower
-                    or exclude_lower not in Path(p).name.lower()
-                )
-            ]
-            if matches and self._project_root is not None:
-                rel = matches[-1].replace("\\", "/")
-                abs_path = self._project_root / Path(rel)
-                if abs_path.is_file():
-                    return abs_path
-        return None
-
-    # -----------------------------------------------------------------
-    # Display
-    # -----------------------------------------------------------------
-
-    def _show_image(
-        self,
-        ax,
-        canvas: FigureCanvasQTAgg,
-        image_path: Path | None,
-    ):
-        """Load and display a preview image, or show a placeholder.
-
-        The file name is placed in the canvas tooltip so the user
-        can hover to identify the image without consuming layout
-        space.
-
-        :param ax: Matplotlib axes to render into.
-        :param canvas: The canvas widget (for tooltip).
-        :param image_path: Absolute path, or *None*.
-        """
-        ax.clear()
-        _style_preview_axes(ax)
-
-        if image_path is None:
-            ax.text(
-                0.5, 0.5, _PLACEHOLDER,
-                ha="center", va="center",
-                color=AppStyles.Colors.TEXT_DISABLED,
-                fontsize=10,
-                transform=ax.transAxes,
-            )
-            canvas.setToolTip("")
-            return
-
-        img = _load_preview(image_path)
-        if img is None:
-            ax.text(
-                0.5, 0.5, _PLACEHOLDER,
-                ha="center", va="center",
-                color=AppStyles.Colors.TEXT_DISABLED,
-                fontsize=10,
-                transform=ax.transAxes,
-            )
-            canvas.setToolTip("")
-            return
-
-        cmap = "gray" if img.ndim == 2 else None
-        ax.imshow(img, cmap=cmap, aspect="equal")
-        canvas.setToolTip(image_path.name)

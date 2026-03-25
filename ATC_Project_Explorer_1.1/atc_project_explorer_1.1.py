@@ -482,12 +482,14 @@ class MainWindow(QMainWindow):
             f"Site selected: {GLOBAL_SITE_LABEL}"
         )
 
+        # Set the project root for image browsing (must precede
+        # populate so preview cards can resolve image paths)
+        self.global_panel.set_project_root(self._project_root)
+        self.site_panel.set_project_root(self._project_root)
+
         # Populate the global panel and show it
         self.global_panel.populate(self._metadata)
         self.panel_stack.setCurrentIndex(0)
-
-        # Set the project root for image browsing
-        self.site_panel.set_project_root(self._project_root)
 
         # Populate the site combo box
         self._populate_site_combobox()
@@ -660,6 +662,7 @@ class MainWindow(QMainWindow):
             window = DetachedPanelWindow.for_global(
                 metadata=self._metadata,
                 project_name=project_name,
+                project_root=self._project_root,
                 parent=self,
             )
         else:

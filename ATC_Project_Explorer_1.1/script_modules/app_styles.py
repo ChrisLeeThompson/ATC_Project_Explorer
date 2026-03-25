@@ -150,14 +150,19 @@ class StyleDimensions:
     PLOT_TITLE_FONT_SIZE = 11
     PLOT_LABEL_FONT_SIZE = 10
     PLOT_TOOLTIP_FONT_SIZE = 10
+    # Preivew images dimensions
+    PREVIEW_MAX_DIM_DEFAULT = 512
+    # Global site preview dimensions
+    GLOBAL_SITE_PREVIEW_CARD_FIXED_WIDTH = 300
+    GLOBAL_SITE_PREVIEW_CARD_THUMBNAIL_MAX_DIM = 256
     # Pattern viewer dimensions
     PATTERN_VIEWER_MINIMUM_HEIGHT = 620
     PATTERN_VIEWER_CANVAS_MINIMUM_HEIGHT = 400
-    PATTERN_VIEWER_LEFT_COLUMN_WIDTH = 400
+    PATTERN_VIEWER_LEFT_COLUMN_WIDTH = 360
     PATTERN_VIEWER_RIGHT_COLUMN_WIDTH = 220
     # Image viewer dimensions
     IMAGE_VIEWER_CANVAS_MINIMUM_HEIGHT = 200
-    IMAGE_VIEWER_COMBOBOX_WIDTH = 400
+    IMAGE_VIEWER_COMBOBOX_WIDTH = 360
     IMAGE_VIEWER_GROUPBOX_MINIMUM_HEIGHT = 640
     # Image metadata dimensions
     IMAGE_METADATA_MINIMUM_HEIGHT = 400
@@ -187,6 +192,8 @@ class ApplicationText:
     WINDOW_TITLE = "ATC Project Explorer 1.1"
 
     GLOBAL_SITE_LABEL = "Global Project Data"
+
+    PREVIEW_PLACEHOLDER_TEXT = "Image not available"
     
 
 class ToolTips:
@@ -273,6 +280,29 @@ class LabelStyles:
                 color: {StyleColors.TEXT_PRIMARY};
                 margin-left: {StyleDimensions.MARGIN};
                 padding-left: {StyleDimensions.PADDING};
+            }}
+        """
+
+    @staticmethod
+    def preview_placeholder() -> str:
+        """Placeholder state for preview thumbnail labels."""
+        return f"""
+            QLabel {{
+                background-color: {StyleColors.MAIN_BG};
+                color: {StyleColors.TEXT_DISABLED};
+                font-size: 10pt;
+                border: none;
+            }}
+        """
+
+    @staticmethod
+    def preview_image() -> str:
+        """Active state for preview thumbnail labels displaying
+        an image."""
+        return f"""
+            QLabel {{
+                background-color: {StyleColors.MAIN_BG};
+                border: none;
             }}
         """
 
