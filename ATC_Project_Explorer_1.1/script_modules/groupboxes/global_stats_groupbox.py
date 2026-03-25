@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QLabel,
     QGridLayout, QSizePolicy
 )
+from PySide6.QtCore import Qt
 from script_modules.app_styles import AppStyles
 from script_modules.consolidated_data_reader import get_global_stats
 
@@ -151,27 +152,27 @@ class GlobalStatsGroupBox(QGroupBox):
         )
         main_layout.setSpacing(AppStyles.Dimensions.LAYOUT_VSPACING)
         main_layout.addWidget(self.number_of_sites_label, 0, 0)
-        main_layout.addWidget(self.number_of_sites_result_label, 0, 1)
+        main_layout.addWidget(self.number_of_sites_result_label, 0, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_target_thickness_label, 1, 0)
-        main_layout.addWidget(self.mean_target_thickness_result_label, 1, 1)
+        main_layout.addWidget(self.mean_target_thickness_result_label, 1, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_milling_angle_label, 2, 0)
-        main_layout.addWidget(self.mean_milling_angle_result_label, 2, 1)
+        main_layout.addWidget(self.mean_milling_angle_result_label, 2, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_lamella_width_label, 3, 0)
-        main_layout.addWidget(self.mean_lamella_width_result_label, 3, 1)
+        main_layout.addWidget(self.mean_lamella_width_result_label, 3, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_duration_label, 4, 0)
-        main_layout.addWidget(self.mean_duration_result_label, 4, 1)
+        main_layout.addWidget(self.mean_duration_result_label, 4, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_duration_without_placement_label, 5, 0)
-        main_layout.addWidget(self.mean_duration_without_placement_result_label, 5, 1)
+        main_layout.addWidget(self.mean_duration_without_placement_result_label, 5, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_lamella_placement_duration_label, 6, 0)
-        main_layout.addWidget(self.mean_lamella_placement_duration_result_label, 6, 1)
+        main_layout.addWidget(self.mean_lamella_placement_duration_result_label, 6, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_preparation_duration_without_placement_label, 7, 0)
-        main_layout.addWidget(self.mean_preparation_duration_without_placement_result_label, 7, 1)
+        main_layout.addWidget(self.mean_preparation_duration_without_placement_result_label, 7, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_milling_duration_label, 8, 0)
-        main_layout.addWidget(self.mean_milling_duration_result_label, 8, 1)
+        main_layout.addWidget(self.mean_milling_duration_result_label, 8, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_thinning_duration_label, 9, 0)
-        main_layout.addWidget(self.mean_thinning_duration_result_label, 9, 1)
+        main_layout.addWidget(self.mean_thinning_duration_result_label, 9, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_delay_duration_label, 10, 0)
-        main_layout.addWidget(self.mean_delay_duration_result_label, 10, 1)
+        main_layout.addWidget(self.mean_delay_duration_result_label, 10, 1, alignment=Qt.AlignmentFlag.AlignRight)
         # Set layout and group box style
         self.setLayout(main_layout)
         self.setTitle("Global Statistics")

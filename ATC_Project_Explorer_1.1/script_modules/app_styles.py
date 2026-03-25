@@ -342,7 +342,7 @@ class GroupBoxStyles:
                 padding-left: {StyleDimensions.PADDING};
                 padding-right: {StyleDimensions.PADDING};
                 padding-bottom: {StyleDimensions.PADDING};
-                /* font-weight: bold;*/
+                font-weight: normal;
                 font-size: {StyleDimensions.FONT_SIZE_NORMAL};
                 color: {StyleColors.TEXT_PRIMARY};
             }}

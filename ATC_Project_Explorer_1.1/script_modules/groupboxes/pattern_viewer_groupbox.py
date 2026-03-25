@@ -1166,7 +1166,7 @@ class PatternViewerGroupBox(QGroupBox):
             value_label.setStyleSheet(AppStyles.Label.default())
             value_label.setWordWrap(True)
             info_layout.addWidget(name_label, row, 0)
-            info_layout.addWidget(value_label, row, 1)
+            info_layout.addWidget(value_label, row, 1, alignment=Qt.AlignmentFlag.AlignRight)
             self._info_labels[key] = (name_label, value_label)
 
         info_layout.setRowStretch(len(fields), 1)
