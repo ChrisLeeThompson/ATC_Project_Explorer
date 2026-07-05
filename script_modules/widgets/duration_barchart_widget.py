@@ -23,6 +23,9 @@ styled ``QGroupBox`` and follows the standard ``populate`` /
 """
 import logging
 from matplotlib.ticker import FuncFormatter
+from PySide6.QtWidgets import QMenu
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QCursor
 from script_modules.app_styles import AppStyles
 from script_modules.consolidated_data_reader import (
     categorize_site_durations,
@@ -61,9 +64,21 @@ _CHART_PADDING_PX = 140
 class DurationBarChartWidget(StyledChartWidget):
     """Horizontal stacked bar chart for per-site milling durations."""
 
+    # Emitted when the user chooses "Open site" from the bar
+    # context menu.  Carries the site name string.
+    site_selected = Signal(str)
+
+    # Emitted when the user chooses "Open site in new window"
+    # from the bar context menu.  Carries the site name string.
+    site_open_new_window = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._segment_rects: list[dict] = []
+        # Site names indexed by bar position (the "y_index" stored in
+        # each segment rect).  Built in reversed metadata order, so it
+        # is navigated by name rather than index elsewhere.
+        self._site_names: list[str] = []
         self._connect_events()
 
     # -----------------------------------------------------------------
@@ -108,6 +123,10 @@ class DurationBarChartWidget(StyledChartWidget):
         self.ax.clear()
         self._style_axes()
         self._segment_rects.clear()
+
+        # Retain the per-bar site names so a click can be resolved to
+        # a site.  Segment rects store a "y_index" into this list.
+        self._site_names = site_names
 
         y_positions = list(range(len(site_names)))
         bar_height = 0.5
@@ -225,6 +244,7 @@ class DurationBarChartWidget(StyledChartWidget):
     def clear(self) -> None:
         """Reset the chart to a blank state."""
         self._segment_rects.clear()
+        self._site_names = []
         self._annotation = None
         self._hover_rect = None
         self._clear_axes()
@@ -234,9 +254,12 @@ class DurationBarChartWidget(StyledChartWidget):
     # -----------------------------------------------------------------
 
     def _connect_events(self):
-        """Connect matplotlib canvas events for hover interaction."""
+        """Connect matplotlib canvas events for hover and click."""
         self.canvas.mpl_connect(
             "motion_notify_event", self._on_mouse_move
+        )
+        self.canvas.mpl_connect(
+            "button_press_event", self._on_mouse_click
         )
 
     def _on_mouse_move(self, event):
@@ -249,13 +272,20 @@ class DurationBarChartWidget(StyledChartWidget):
             or event.inaxes != self.ax
             or not self._segment_rects
         ):
+            self.canvas.unsetCursor()
             self._hide_annotation()
             return
 
         hit = self._find_segment(event.xdata, event.ydata)
         if hit is None:
+            self.canvas.unsetCursor()
             self._hide_annotation()
             return
+
+        # A bar is under the cursor: signal that it is clickable.
+        self.canvas.setCursor(
+            QCursor(Qt.CursorShape.PointingHandCursor)
+        )
 
         # Build tooltip text
         duration_str = format_seconds(hit["seconds"])
@@ -297,6 +327,59 @@ class DurationBarChartWidget(StyledChartWidget):
             ):
                 return rect
         return None
+
+    # -----------------------------------------------------------------
+    # Click Navigation
+    # -----------------------------------------------------------------
+
+    def _on_mouse_click(self, event):
+        """Show a context menu when a site bar is left-clicked.
+
+        :param event: Matplotlib button_press_event.
+        """
+        if (
+            event.inaxes != self.ax
+            or not self._segment_rects
+            or event.button != 1  # left click only
+        ):
+            return
+
+        hit = self._find_segment(event.xdata, event.ydata)
+        if hit is None:
+            return
+
+        y_index = hit["y_index"]
+        if not 0 <= y_index < len(self._site_names):
+            return
+
+        site_name = self._site_names[y_index]
+        self._show_context_menu(site_name)
+
+    def _show_context_menu(self, site_name: str) -> None:
+        """Display a context menu at the cursor with actions for
+        the clicked site.
+
+        :param site_name: Name of the clicked site.
+        """
+        menu = QMenu(self)
+        menu.setStyleSheet(AppStyles.ComboBox.context_menu())
+
+        go_to_action = menu.addAction(f"Open {site_name}")
+        open_new_action = menu.addAction(
+            f"Open {site_name} in new window"
+        )
+
+        chosen = menu.exec(QCursor.pos())
+
+        if chosen == go_to_action:
+            logger.info(f"Duration chart menu: open '{site_name}'")
+            self.site_selected.emit(site_name)
+        elif chosen == open_new_action:
+            logger.info(
+                f"Duration chart menu: open '{site_name}' "
+                f"in new window"
+            )
+            self.site_open_new_window.emit(site_name)
 
     # -----------------------------------------------------------------
     # Formatting Helpers

@@ -120,6 +120,12 @@ class GlobalPanel(QWidget):
         self.site_position_plot.site_open_new_window.connect(
             self.site_open_new_window
         )
+        self.duration_bar_chart.site_selected.connect(
+            self.site_selected
+        )
+        self.duration_bar_chart.site_open_new_window.connect(
+            self.site_open_new_window
+        )
         self.global_site_preview_groupbox.site_selected.connect(
             self.site_selected
         )

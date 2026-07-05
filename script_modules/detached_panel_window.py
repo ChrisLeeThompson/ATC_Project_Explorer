@@ -162,7 +162,7 @@ class DetachedPanelWindow(QWidget):
         window.setWindowTitle(
             f"{site_name} \u2014 {AppStyles.AppText.WINDOW_TITLE}"
         )
-        window._header.project_name_label.setText(project_name)
+        window._header.project_name_button.setText(project_name)
         window._header.site_name_label.setText(
             f"Site selected: {site_name}"
         )

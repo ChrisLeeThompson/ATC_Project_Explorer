@@ -12,7 +12,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QLabel, QPushButton
 )
-from PySide6.QtCore import Signal, Slot, QUrl
+from PySide6.QtCore import Signal, Slot, QUrl, Qt
 from PySide6.QtGui import QDesktopServices
 from script_modules.app_styles import AppStyles
 
@@ -39,10 +39,12 @@ class HeaderGroupBox(QGroupBox):
 
     def _create_widgets(self):
         # The project name is a flat, link-styled button: it looks like
-        # a title but opens the project directory when clicked.  The
-        # cursor is intentionally left as the normal arrow (no
-        # pointing-hand) per UI preference.
+        # a title but opens the project directory when clicked.  A
+        # pointing-hand cursor on hover signals that it is clickable.
         self.project_name_button = QPushButton("", parent=self)
+        self.project_name_button.setCursor(
+            Qt.CursorShape.PointingHandCursor
+        )
         self.project_name_button.setToolTip(
             AppStyles.AppText.PROJECT_NAME_BUTTON
         )
