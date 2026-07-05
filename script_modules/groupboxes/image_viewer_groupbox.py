@@ -73,7 +73,7 @@ from pathlib import Path
 
 from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QSplitter, QWidget,
-    QLabel, QSizePolicy, QCheckBox,
+    QLabel, QSizePolicy, QCheckBox, QSlider,
 )
 from PySide6.QtCore import Qt, QEvent, QRectF, QPointF, Slot
 from PySide6.QtGui import (
@@ -320,6 +320,15 @@ class ImageCanvasWidget(QWidget):
         self._overlay_visible: bool = False
         self._error_text: str | None = None
 
+        # Cross-fade state: an optional neighbour image drawn beneath
+        # the current one, revealed as the current image's opacity is
+        # lowered via the Previous/Next opacity sliders.  The neighbour
+        # carries its own overlay data so its graphics fade in (inverse
+        # of the current image) as it is revealed.
+        self._neighbor_pixmap: QPixmap | None = None
+        self._neighbor_overlay_data: dict | None = None
+        self._current_opacity: float = 1.0
+
         # Zoom / pan / drag state (lifted from PatternCanvasWidget)
         self._zoom: float = 1.0
         self._pan_x: float = 0.0
@@ -389,7 +398,48 @@ class ImageCanvasWidget(QWidget):
         self._overlay_data = None
         self._overlay_visible = False
         self._error_text = None
+        self._neighbor_pixmap = None
+        self._neighbor_overlay_data = None
+        self._current_opacity = 1.0
         self.reset_view()
+        self.update()
+
+    def set_neighbor(
+        self,
+        pixmap: QPixmap | None,
+        overlay_data: dict | None = None,
+    ) -> None:
+        """Set the neighbour image (and its overlay) drawn beneath the
+        current image.
+
+        Does not trigger a repaint on its own — :meth:`set_current_opacity`
+        drives the repaint so that dragging the slider only issues one
+        ``update`` per opacity tick.
+
+        :param pixmap: The previous/next image to reveal, or *None*.
+        :param overlay_data: The neighbour's overlay dict (same shape as
+            the current image's), drawn only when the overlay is visible.
+        """
+        self._neighbor_pixmap = pixmap
+        self._neighbor_overlay_data = overlay_data
+
+    def set_current_opacity(self, value: float) -> None:
+        """Set the opacity of the current image and repaint.
+
+        At ``1.0`` the neighbour is fully hidden (behaviour identical
+        to no cross-fade); at ``0.0`` only the neighbour shows.
+
+        :param value: Opacity in the range ``[0.0, 1.0]`` (clamped).
+        """
+        self._current_opacity = max(0.0, min(1.0, value))
+        self.update()
+
+    def clear_neighbor(self) -> None:
+        """Drop any cross-fade: forget the neighbour and restore full
+        opacity, then repaint."""
+        self._neighbor_pixmap = None
+        self._neighbor_overlay_data = None
+        self._current_opacity = 1.0
         self.update()
 
     def reset_view(self) -> None:
@@ -529,12 +579,54 @@ class ImageCanvasWidget(QWidget):
             painter.end()
             return
 
+        # Cross-fade: when a neighbour is present and the current image
+        # is not fully opaque, draw the neighbour first (opaque) into the
+        # SAME display rect so a same-size before/after pair is
+        # pixel-for-pixel aligned and shares the current zoom/pan, then
+        # draw the current image on top at the slider opacity.  When no
+        # neighbour is set or opacity is 1.0 this path is skipped and the
+        # render is identical to a plain single-image draw.
+        fade_active = (
+            self._neighbor_pixmap is not None
+            and not self._neighbor_pixmap.isNull()
+            and self._current_opacity < 1.0
+        )
+        if fade_active:
+            painter.drawPixmap(
+                disp_rect,
+                self._neighbor_pixmap,
+                QRectF(self._neighbor_pixmap.rect()),
+            )
+            # Neighbour's own graphics fade IN as it is revealed
+            # (inverse of the current image's opacity), so mid-slide
+            # both overlays show at their image's strength.
+            if (
+                self._overlay_visible
+                and self._neighbor_overlay_data is not None
+            ):
+                painter.setOpacity(1.0 - self._current_opacity)
+                self._draw_overlay(
+                    painter, disp_rect, self._neighbor_overlay_data,
+                    self._neighbor_pixmap.width(),
+                    self._neighbor_pixmap.height(),
+                )
+            painter.setOpacity(self._current_opacity)
+
         painter.drawPixmap(
             disp_rect, self._pixmap, QRectF(self._pixmap.rect())
         )
 
+        # Current overlay draws after setOpacity so the crosshair/
+        # rectangles fade in lockstep with the current image they
+        # describe.
         if self._overlay_visible and self._overlay_data is not None:
-            self._draw_overlay(painter, disp_rect)
+            self._draw_overlay(
+                painter, disp_rect, self._overlay_data,
+                self._pixmap.width(), self._pixmap.height(),
+            )
+
+        if fade_active:
+            painter.setOpacity(1.0)
 
         painter.end()
 
@@ -570,17 +662,24 @@ class ImageCanvasWidget(QWidget):
         return QRectF(disp_x, disp_y, disp_w, disp_h)
 
     def _draw_overlay(
-        self, painter: QPainter, disp_rect: QRectF,
+        self,
+        painter: QPainter,
+        disp_rect: QRectF,
+        overlay: dict | None,
+        img_w: int,
+        img_h: int,
     ) -> None:
-        """Draw the crosshair and pattern rectangles.
+        """Draw the crosshair and pattern rectangles for *overlay*.
 
         Overlay coordinates are in image-pixel space (full
-        resolution).  The transform to widget coordinates uses the
-        current display rect, which already incorporates the fit
-        scale, user zoom, and pan offsets — so overlay primitives
-        zoom and pan in lockstep with the image.
+        resolution) relative to an image of size *img_w* × *img_h*.
+        The transform to widget coordinates uses the current display
+        rect, which already incorporates the fit scale, user zoom, and
+        pan offsets — so overlay primitives zoom and pan in lockstep
+        with the image.  Passing the overlay and dimensions in (rather
+        than reading ``self``) lets this draw either the current image's
+        overlay or a revealed neighbour's during a cross-fade.
         """
-        overlay = self._overlay_data
         if not overlay:
             return
 
@@ -588,8 +687,6 @@ class ImageCanvasWidget(QWidget):
         if not center_px:
             return
 
-        img_w = self._pixmap.width()
-        img_h = self._pixmap.height()
         if img_w <= 0 or img_h <= 0:
             return
 
@@ -725,6 +822,14 @@ class ImageViewerGroupBox(QGroupBox):
         self._current_index: int = -1
         self._overlay_data: dict | None = None
         self._preserved_view: tuple | None = None
+
+        # Decoded neighbour images for the opacity cross-fade, keyed by
+        # absolute path — each value is a ``(pixmap, overlay_data)`` pair.
+        # Populated lazily on first slider interaction and cleared on
+        # every image change (see _reset_opacity_sliders).
+        self._neighbor_cache: dict[
+            Path, tuple[QPixmap, dict | None]
+        ] = {}
 
         self._create_widgets()
         self._setup_layout()
@@ -928,6 +1033,49 @@ class ImageViewerGroupBox(QGroupBox):
         self._next_button = NextButton(parent=self)
         self._next_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
+        # Opacity cross-fade sliders flanking the nav buttons.  The left
+        # slider fades the current image to reveal the previous image; the
+        # right slider reveals the next image.  100 = current image fully
+        # opaque (no reveal).  Disabled until >= 2 images are available.
+        self._prev_opacity_label = QLabel("Opacity", parent=self)
+        self._prev_opacity_label.setStyleSheet(AppStyles.Label.default())
+        self._prev_opacity_label.setToolTip(
+            AppStyles.AppText.OPACITY_PREV_SLIDER
+        )
+        self._prev_opacity_slider = self._make_opacity_slider()
+        self._prev_opacity_slider.setToolTip(
+            AppStyles.AppText.OPACITY_PREV_SLIDER
+        )
+
+        self._next_opacity_label = QLabel("Opacity", parent=self)
+        self._next_opacity_label.setStyleSheet(AppStyles.Label.default())
+        self._next_opacity_label.setToolTip(
+            AppStyles.AppText.OPACITY_NEXT_SLIDER
+        )
+        self._next_opacity_slider = self._make_opacity_slider()
+        self._next_opacity_slider.setToolTip(
+            AppStyles.AppText.OPACITY_NEXT_SLIDER
+        )
+
+    def _make_opacity_slider(self) -> QSlider:
+        """Build a horizontal opacity slider for the cross-fade feature.
+
+        Range 0-100 with 100 (fully opaque current image) as the rest
+        position.  ``NoFocus`` mirrors the nav buttons; a fixed width
+        keeps the slider from absorbing horizontal slack so the buttons
+        stay centred.
+        """
+        slider = QSlider(Qt.Orientation.Horizontal, parent=self)
+        slider.setRange(0, 100)
+        slider.setValue(100)
+        slider.setEnabled(False)
+        slider.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        slider.setFixedWidth(
+            AppStyles.Dimensions.IMAGE_VIEWER_OPACITY_SLIDER_WIDTH
+        )
+        slider.setStyleSheet(AppStyles.Slider.default())
+        return slider
+
     def _setup_layout(self):
         """Arrange widgets in a two-column layout."""
         # -- Left column --
@@ -952,12 +1100,19 @@ class ImageViewerGroupBox(QGroupBox):
         name_row.addWidget(self._show_graphics_checkbox)
         name_row.addWidget(self._image_counter_label)
 
-        # Button row: both buttons stretch to fill
+        # Button row: opacity sliders flank the nav buttons (labels on
+        # the outer edges, mirrored; sliders inboard).  Labels/sliders
+        # are fixed width (stretch 0) so the two buttons absorb all
+        # horizontal slack and stay centred.
         button_row = QHBoxLayout()
         button_row.setContentsMargins(0, 0, 0, 0)
         button_row.setSpacing(AppStyles.Dimensions.LAYOUT_VSPACING)
+        button_row.addWidget(self._prev_opacity_label)
+        button_row.addWidget(self._prev_opacity_slider)
         button_row.addWidget(self._prev_button, 1)
         button_row.addWidget(self._next_button, 1)
+        button_row.addWidget(self._next_opacity_slider)
+        button_row.addWidget(self._next_opacity_label)
 
         right_column = QVBoxLayout()
         right_column.setContentsMargins(0, 0, 0, 0)
@@ -1005,6 +1160,12 @@ class ImageViewerGroupBox(QGroupBox):
         )
         self._prev_button.clicked.connect(self._on_previous)
         self._next_button.clicked.connect(self._on_next)
+        self._prev_opacity_slider.valueChanged.connect(
+            self._on_prev_opacity_changed
+        )
+        self._next_opacity_slider.valueChanged.connect(
+            self._on_next_opacity_changed
+        )
         self._show_graphics_checkbox.toggled.connect(
             self._on_show_graphics_toggled
         )
@@ -1150,6 +1311,155 @@ class ImageViewerGroupBox(QGroupBox):
         has_images = len(self._current_image_paths) > 0
         self._prev_button.setEnabled(has_images)
         self._next_button.setEnabled(has_images)
+        self._update_opacity_slider_states()
+
+    # -----------------------------------------------------------------
+    # Opacity Cross-fade
+    # -----------------------------------------------------------------
+
+    def _update_opacity_slider_states(self):
+        """Enable the opacity sliders when a neighbour exists.
+
+        A cross-fade needs a distinct previous/next image to reveal, so
+        the sliders are enabled only with >= 2 images (the nav buttons,
+        which wrap onto the same single image, use ``> 0``).  When
+        disabled, any active fade is reset.
+        """
+        enabled = len(self._current_image_paths) >= 2
+        self._prev_opacity_slider.setEnabled(enabled)
+        self._next_opacity_slider.setEnabled(enabled)
+        if not enabled:
+            self._reset_opacity_sliders()
+
+    def _reset_opacity_sliders(self):
+        """Snap both sliders back to fully-opaque, drop the neighbour
+        cache, and clear the canvas cross-fade.
+
+        Called at every image change so a fade never persists across
+        Previous/Next, directory switches, or programmatic navigation.
+        ``blockSignals`` prevents the reset from re-entering the value
+        handlers (which would try to reload a neighbour).
+        """
+        for slider in (
+            self._prev_opacity_slider, self._next_opacity_slider,
+        ):
+            if slider.value() != 100:
+                slider.blockSignals(True)
+                slider.setValue(100)
+                slider.blockSignals(False)
+        self._neighbor_cache.clear()
+        self._canvas.clear_neighbor()
+
+    def _get_neighbor(
+        self, neighbor_index: int,
+    ) -> tuple[QPixmap, dict | None] | None:
+        """Decode (and cache) the pixmap and overlay for
+        *neighbor_index*.
+
+        Uses the same native-resolution ``load_image`` /
+        ``numpy_to_qpixmap`` pipeline as the current image so the fade
+        compares like-for-like, and the same guarded overlay extraction
+        so the neighbour's graphics can fade in during the cross-fade.
+        Returns *None* for a missing or undecodable file so the caller
+        can cancel the fade cleanly.
+
+        :param neighbor_index: Index into ``_current_image_paths``.
+        :return: ``(pixmap, overlay_data)`` pair, or *None*.
+        """
+        path = self._current_image_paths[neighbor_index]
+        cached = self._neighbor_cache.get(path)
+        if cached is not None:
+            return cached
+
+        if not path.is_file():
+            logger.debug(f"Opacity neighbour not on disk: {path.name}")
+            return None
+
+        img = load_image(path)
+        if img is None:
+            return None
+        pixmap = numpy_to_qpixmap(img)
+        if pixmap is None:
+            return None
+
+        # Extract the neighbour's overlay so its crosshair/rectangles
+        # can fade in as it is revealed.  Guarded exactly like the
+        # current image's extraction — a bad metadata shape degrades to
+        # "no overlay" rather than cancelling the fade.
+        overlay: dict | None = None
+        try:
+            metadata = extract_image_metadata(path)
+            overlay = self._extract_overlay_data(metadata)
+        except Exception:
+            logger.debug(
+                f"Failed to extract neighbour overlay: {path.name}",
+                exc_info=True,
+            )
+
+        entry = (pixmap, overlay)
+        self._neighbor_cache[path] = entry
+        return entry
+
+    @Slot(int)
+    def _on_prev_opacity_changed(self, value: int):
+        """Fade the current image to reveal the previous image."""
+        self._apply_opacity_fade(
+            slider=self._prev_opacity_slider,
+            other_slider=self._next_opacity_slider,
+            offset=-1,
+            value=value,
+        )
+
+    @Slot(int)
+    def _on_next_opacity_changed(self, value: int):
+        """Fade the current image to reveal the next image."""
+        self._apply_opacity_fade(
+            slider=self._next_opacity_slider,
+            other_slider=self._prev_opacity_slider,
+            offset=+1,
+            value=value,
+        )
+
+    def _apply_opacity_fade(
+        self, slider, other_slider, offset: int, value: int,
+    ):
+        """Reveal the wrap-around neighbour at *offset* under the
+        current image.
+
+        The two sliders are mutually exclusive — you cannot reveal the
+        previous and next images at once — so engaging one snaps the
+        other back to fully opaque.
+
+        :param slider: The slider being dragged.
+        :param other_slider: The opposite slider (reset to 100).
+        :param offset: ``-1`` for the previous image, ``+1`` for next.
+        :param value: This slider's value (0-100).
+        """
+        n = len(self._current_image_paths)
+        if n < 2 or self._current_index < 0:
+            return
+
+        # Mutual exclusivity: return the other slider to fully opaque
+        # without re-entering its handler.
+        if other_slider.value() != 100:
+            other_slider.blockSignals(True)
+            other_slider.setValue(100)
+            other_slider.blockSignals(False)
+
+        neighbor_index = (self._current_index + offset) % n
+        entry = self._get_neighbor(neighbor_index)
+
+        if entry is None:
+            # Missing/failed neighbour: cancel this fade, snap back.
+            slider.blockSignals(True)
+            slider.setValue(100)
+            slider.blockSignals(False)
+            self._canvas.clear_neighbor()
+            return
+
+        neighbor_pixmap, neighbor_overlay = entry
+        self._canvas.set_neighbor(neighbor_pixmap, neighbor_overlay)
+        self._canvas.set_current_opacity(value / 100.0)
 
     # -----------------------------------------------------------------
     # View Preservation
@@ -1190,6 +1500,11 @@ class ImageViewerGroupBox(QGroupBox):
             self._clear_canvas()
             self._clear_metadata()
             return
+
+        # Drop any active cross-fade before the new image is drawn so a
+        # lowered slider never persists across navigation (covers
+        # Previous/Next, directory selection, and select_image).
+        self._reset_opacity_sliders()
 
         image_path = self._current_image_paths[self._current_index]
 
@@ -1239,6 +1554,7 @@ class ImageViewerGroupBox(QGroupBox):
     def _clear_canvas(self):
         """Clear the image canvas."""
         self._canvas.clear()
+        self._reset_opacity_sliders()
         self._image_name_label.setText("")
         self._image_counter_label.setText("")
 

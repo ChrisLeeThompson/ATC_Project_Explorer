@@ -165,6 +165,7 @@ class StyleDimensions:
     IMAGE_VIEWER_CANVAS_MINIMUM_HEIGHT = 200
     IMAGE_VIEWER_COMBOBOX_WIDTH = 360
     IMAGE_VIEWER_GROUPBOX_MINIMUM_HEIGHT = 640
+    IMAGE_VIEWER_OPACITY_SLIDER_WIDTH = 120
     # Image metadata dimensions
     IMAGE_METADATA_MINIMUM_HEIGHT = 400
     # Site parameters dimensions
@@ -206,6 +207,15 @@ class ApplicationText:
     DELETE_TEMP_METADATA_BUTTON =  "Delete the auto generated temporary metadata file and directory. Only available for auto-generated metadata files."
 
     PROJECT_NAME_BUTTON = "Open the project directory."
+
+    OPACITY_PREV_SLIDER = (
+        "Adjust the opacity of the current image to reveal the "
+        "previous image."
+    )
+    OPACITY_NEXT_SLIDER = (
+        "Adjust the opacity of the current image to reveal the "
+        "next image."
+    )
     
 
 class ToolTips:
@@ -729,6 +739,44 @@ class CheckBoxStyles:
         """
 
 
+class SliderStyles:
+
+    @staticmethod
+    def default() -> str:
+        return f"""
+            QSlider {{
+                margin-left: {StyleDimensions.MARGIN};
+                margin-right: {StyleDimensions.MARGIN};
+            }}
+            QSlider::groove:horizontal {{
+                height: 6px;
+                background-color: {StyleColors.INPUT_BG};
+                border: 1px solid {StyleColors.INPUT_BORDER};
+                border-radius: {StyleDimensions.BORDER_RADIUS_SMALL};
+            }}
+            QSlider::handle:horizontal {{
+                width: 14px;
+                margin: -5px 0px;
+                background-color: {StyleColors.BUTTON_BG};
+                border-radius: {StyleDimensions.BORDER_RADIUS_SMALL};
+            }}
+            QSlider::handle:horizontal:hover {{
+                background-color: {StyleColors.BUTTON_HOVER};
+            }}
+            QSlider::handle:horizontal:pressed {{
+                background-color: {StyleColors.BUTTON_PRESSED};
+            }}
+            QSlider::groove:horizontal:disabled {{
+                background-color: {StyleColors.INPUT_BG};
+                border: 1px solid {StyleColors.INPUT_BORDER};
+            }}
+            QSlider::handle:horizontal:disabled {{
+                background-color: {StyleColors.BUTTON_DISABLED};
+            }}
+            {ToolTips.default()}
+        """
+
+
 class ComboBoxStyles:
 
     # Arrow icon path (uses centralized ASSETS_DIR)
@@ -1157,6 +1205,7 @@ class AppStyles:
     AppText = ApplicationText
     AppToolTips = ToolTips
     CheckBox = CheckBoxStyles
+    Slider = SliderStyles
     ComboBox = ComboBoxStyles
     ScrollArea = ScrollAreaStyles
     ProgressBar = ProgressBarStyles
