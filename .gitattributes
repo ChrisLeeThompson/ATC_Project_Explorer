@@ -1,0 +1,12 @@
+# Normalize line endings: store text as LF in the repository, check out
+# with the platform's native endings. Prevents CRLF/LF diff churn.
+* text=auto
+
+# Treat binary assets as binary (never touch their bytes).
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.tif  binary
+*.tiff binary
