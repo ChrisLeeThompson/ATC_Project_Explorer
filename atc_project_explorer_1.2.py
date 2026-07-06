@@ -215,6 +215,10 @@ class MainWindow(QMainWindow):
         self.status_bar.cancel_button_clicked_signal.connect(
             self._on_cancel_worker
         )
+        # Image viewer: report a failed image reveal on the status bar.
+        self.site_panel.reveal_failed.connect(
+            lambda msg: self.status_bar.set_status_bar_message_timed(msg, 5000)
+        )
 
     # -----------------------------------------------------------------
     # Window Close

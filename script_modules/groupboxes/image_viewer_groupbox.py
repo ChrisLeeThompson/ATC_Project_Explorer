@@ -75,7 +75,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QSplitter, QWidget,
     QLabel, QSizePolicy, QCheckBox, QSlider,
 )
-from PySide6.QtCore import Qt, QEvent, QRectF, QPointF, Slot
+from PySide6.QtCore import Qt, QEvent, QRectF, QPointF, Slot, Signal
 from PySide6.QtGui import (
     QPixmap, QPainter, QColor, QPen, QCursor,
 )
@@ -91,6 +91,8 @@ from script_modules.widgets.button_widgets import (
     PreviousButton, NextButton, ResetViewButton,
 )
 from script_modules.widgets.searchable_tree_widget import SearchableTreePanel
+from script_modules.widgets.clickable_label import ClickableLabel
+from script_modules.file_reveal import reveal_in_file_manager
 from script_modules.parsers.image_metadata_parser import (
     extract_image_metadata,
 )
@@ -810,6 +812,12 @@ class ImageViewerGroupBox(QGroupBox):
     """Two-column image viewer with directory selection and
     Previous/Next navigation."""
 
+    # Emitted with a human-readable message when a reveal fails (missing
+    # file, or a file manager that would not open). The embedded panel's
+    # MainWindow connects this to the status bar; detached windows leave
+    # it unconnected (the failure is still logged).
+    reveal_failed = Signal(str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setTitle("Image Viewer")
@@ -902,6 +910,8 @@ class ImageViewerGroupBox(QGroupBox):
         self._info_label.setText(_PLACEHOLDER_LABEL)
         self._info_label.setVisible(True)
         self._image_name_label.setText("")
+        self._image_name_label.set_clickable(False)
+        self._image_name_label.setToolTip("")
         self._image_counter_label.setText("")
         self._clear_canvas()
         self._clear_metadata()
@@ -985,10 +995,10 @@ class ImageViewerGroupBox(QGroupBox):
         self._info_label.setStyleSheet(AppStyles.Label.default())
         self._info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Image name label
-        self._image_name_label = QLabel("", parent=self)
-        self._image_name_label.setStyleSheet(AppStyles.Label.default())
-        self._image_name_label.setWordWrap(True)
+        # Image name label — a "reveal in folder" link whenever a slice
+        # image is shown (see _display_current_image): normal text that
+        # turns blue on hover, like a hyperlink.
+        self._image_name_label = ClickableLabel("", parent=self)
 
         # Image counter label (e.g. "3 / 15")
         self._image_counter_label = QLabel("", parent=self)
@@ -1170,6 +1180,7 @@ class ImageViewerGroupBox(QGroupBox):
             self._on_show_graphics_toggled
         )
         self._reset_view_button.clicked.connect(self._on_reset_view)
+        self._image_name_label.clicked.connect(self._on_image_name_clicked)
 
     # -----------------------------------------------------------------
     # Reset-view button placement
@@ -1201,6 +1212,25 @@ class ImageViewerGroupBox(QGroupBox):
         """Reset the canvas zoom and pan to fit all."""
         self._canvas.reset_view()
         self._canvas.update()
+
+    @Slot()
+    def _on_image_name_clicked(self):
+        """Reveal the current image in the OS file manager.
+
+        The viewer already holds the resolved absolute path, so it
+        performs the reveal itself — working the same whether this panel
+        is embedded in the main window or popped out into a detached
+        window. On failure it emits ``reveal_failed`` for optional
+        status-bar feedback and logs.
+        """
+        if (self._current_index < 0
+                or self._current_index >= len(self._current_image_paths)):
+            return
+        image_path = self._current_image_paths[self._current_index]
+        if not reveal_in_file_manager(image_path):
+            message = f"Image file not found: {image_path}"
+            logger.warning(message)
+            self.reveal_failed.emit(message)
 
     # -----------------------------------------------------------------
     # Directory Selection
@@ -1510,6 +1540,11 @@ class ImageViewerGroupBox(QGroupBox):
 
         # Update labels
         self._image_name_label.setText(image_path.name)
+        # The name is a reveal-in-folder link while a slice image is
+        # shown; reveal_in_file_manager gracefully handles a
+        # since-deleted file.
+        self._image_name_label.set_clickable(True)
+        self._image_name_label.setToolTip(AppStyles.AppText.IMAGE_NAME_LINK)
         self._image_counter_label.setText(
             f"{self._current_index + 1} / "
             f"{len(self._current_image_paths)}"
@@ -1556,6 +1591,8 @@ class ImageViewerGroupBox(QGroupBox):
         self._canvas.clear()
         self._reset_opacity_sliders()
         self._image_name_label.setText("")
+        self._image_name_label.set_clickable(False)
+        self._image_name_label.setToolTip("")
         self._image_counter_label.setText("")
 
     # -----------------------------------------------------------------

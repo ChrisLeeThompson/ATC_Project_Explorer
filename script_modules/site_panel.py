@@ -24,7 +24,7 @@ from pathlib import Path
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QSizePolicy
 )
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Qt, Slot, Signal
 from script_modules.app_styles import AppStyles
 from script_modules.groupboxes.site_stats_groupbox import SiteStatsGroupBox
 from script_modules.groupboxes.site_preview_groupbox import SitePreviewGroupBox
@@ -38,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 
 class SitePanel(QWidget):
+
+    # Bubbled up from the image viewer so a host with a status bar can
+    # report a failed image reveal.
+    reveal_failed = Signal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -156,6 +160,7 @@ class SitePanel(QWidget):
         self.site_preview_groupbox.preview_clicked.connect(
             self._on_preview_clicked
         )
+        self.image_viewer_groupbox.reveal_failed.connect(self.reveal_failed)
 
     # -----------------------------------------------------------------
     # Slots

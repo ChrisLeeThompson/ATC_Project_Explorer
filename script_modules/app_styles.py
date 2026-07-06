@@ -216,6 +216,8 @@ class ApplicationText:
         "Adjust the opacity of the current image to reveal the "
         "next image."
     )
+
+    IMAGE_NAME_LINK = "Click to show this image in its directory."
     
 
 class ToolTips:
@@ -277,6 +279,23 @@ class LabelStyles:
             QLabel {{
                 font-size: {StyleDimensions.FONT_SIZE_NORMAL};
                 color: {StyleColors.TEXT_PRIMARY};
+                margin-left: {StyleDimensions.MARGIN};
+                margin-right: {StyleDimensions.MARGIN};
+            }}
+            {ToolTips.default()}
+        """
+
+    @staticmethod
+    def clickable(color: str = StyleColors.TEXT_PRIMARY) -> str:
+        """Stylesheet for a ClickableLabel — identical geometry to
+        ``default()`` (same font and left/right margins, so the label
+        does not shift) but with a parameterised text ``color`` that the
+        widget swaps between rest / hover / pressed states.
+        """
+        return f"""
+            QLabel {{
+                font-size: {StyleDimensions.FONT_SIZE_NORMAL};
+                color: {color};
                 margin-left: {StyleDimensions.MARGIN};
                 margin-right: {StyleDimensions.MARGIN};
             }}
