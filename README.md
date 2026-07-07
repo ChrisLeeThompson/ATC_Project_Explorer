@@ -1,11 +1,11 @@
 # ATC Project Explorer
 
 A desktop GUI for exploring **Thermo Scientific AutoTEM Cryo (ATC)** project
-metadata. Point it at an ATC project and browse each site's statistics,
-parameters, images, and instrument metadata — plus a project-wide
-site-position atlas and process-duration charts.
+metadata. Open an ATC project and browse each site's statistics, 
+parameters, images, and instrument metadata. Global project data is also 
+displayed, including site durations and relative site positions.
 
-Built with PySide6. Developed against **AutoScript 4.13**; it runs inside the
+Built with PySide6. Developed with **AutoScript 4.13**; it runs inside the
 AutoScript 4.13 Python environment with no additional packages, or standalone
 using the dependencies in [`requirements.txt`](requirements.txt).
 
@@ -13,14 +13,16 @@ using the dependencies in [`requirements.txt`](requirements.txt).
 
 - **Site explorer** — per-site statistics, parameters, and preview images.
 - **Image viewer** — browse a site's image directories with previous/next
-  navigation, opacity cross-fade between images, an image-metadata tree, and a
-  clickable image name that reveals the file in your OS file browser.
-- **Pattern viewer** — view a site's pattern image with a scale-bar overlay.
+  navigation, scroll-wheel zoom, opacity cross-fade between images, and 
+  an image-metadata tree.
+- **Pattern viewer** — view the relative sizes of the patterns used for a site, 
+including parameters used for the patterns.
 - **Site-position atlas** — a scatter map of site locations with an image
   montage; click a marker to jump to that site.
 - **Process-duration charts** — bar charts of per-step durations; click a bar
   to navigate to the corresponding image.
-- **Detachable panels** — pop a site out into its own window.
+- **Detachable panels** — open a site in its own window. This can be useful for 
+comparing results between two or more sites.
 
 ## Requirements
 
@@ -47,7 +49,7 @@ packages are already available and no install is needed.
 ## Run
 
 ```bash
-python atc_project_explorer_1.2.py
+python atc_project_explorer.py
 ```
 
 ## Download

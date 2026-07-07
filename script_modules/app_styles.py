@@ -3,6 +3,8 @@ Central repository for application styles and tool tips.
 """
 from pathlib import Path
 
+from script_modules import __version__
+
 
 # =====================================================================
 # Asset Paths
@@ -198,7 +200,7 @@ class StyleFonts:
 
 class ApplicationText:
 
-    WINDOW_TITLE = "ATC Project Explorer 1.2"
+    WINDOW_TITLE = f"ATC Project Explorer {__version__}"
 
     GLOBAL_SITE_LABEL = "Global Project Data"
 

@@ -1,5 +1,5 @@
 """
-ATC Project Explorer 1.2
+ATC Project Explorer
 .
 This application is designed to help users explore Thermo Scientific AutoTEM Cryo (ATC) project metadata.
 AutoScript 4.13 was used to develop the application, and no additional dependencies are required beyond what is included with AutoScript 4.13.
@@ -11,7 +11,7 @@ If you have any questions or suggestions for improvements, please contact me (Ch
 Thank you,
 Chris Thompson
 .
-May 26, 2026
+July 6, 2026
 .
 .
 MIT License
