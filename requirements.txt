@@ -1,5 +1,5 @@
 # =============================================================
-# ATC Project Explorer 1.0 — Python Dependencies
+# ATC Project Explorer — Python Dependencies
 # =============================================================
 # Python 3.11+
 #

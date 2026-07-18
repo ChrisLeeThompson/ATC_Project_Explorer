@@ -337,6 +337,15 @@ def _build_site_project_data_map(
     for site in site_list:
         name = site.get("Name", "")
         if name:
+            if name in result:
+                # Keyed by name, so a repeated Name silently replaces
+                # the earlier site and one lamella disappears from the
+                # UI (and from the site-position atlas). Surface it.
+                logger.warning(
+                    f"Duplicate site name '{name}' in "
+                    f"ProjectData.dat — keeping the later entry; "
+                    f"the earlier site is hidden from the UI"
+                )
             result[name] = site
         else:
             logger.warning(

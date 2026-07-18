@@ -46,7 +46,6 @@ from script_modules.app_styles import AppStyles
 from script_modules.value_utils import (
     convert_to_metres,
     extract_numeric,
-    parse_numeric_value,
 )
 from script_modules.image_utils import load_image
 from script_modules.preview_image_helpers import (
@@ -136,6 +135,16 @@ class SitePositionPlotWidget(StyledChartWidget):
 
         # ── 1. Collect per-site data ─────────────────────────────
         entries = self._collect_site_entries(sites)
+        if not entries:
+            # Every site was skipped (no parseable ChunkSiteLocation)
+            # — without this guard the centroid division below would
+            # raise ZeroDivisionError.
+            logger.warning(
+                "No sites with usable stage positions; "
+                "site-position atlas left empty"
+            )
+            self._clear_axes()
+            return
 
         # ── 2. Load images and extract metadata ──────────────────
         if project_root is not None:
@@ -210,6 +219,9 @@ class SitePositionPlotWidget(StyledChartWidget):
         for e, (pos_x, pos_y) in zip(entries, display_positions):
             e["display_x_um"] = (pos_x - mean_x_m) * 1e6
             e["display_y_um"] = (pos_y - mean_y_m) * 1e6
+
+        # ── Diagnostic: sites sharing identical coordinates ──────
+        self._report_coincident_sites(entries, display_positions)
 
         # ── 4. Deduplicate images ────────────────────────────────
         self._deduplicate_images(entries)
@@ -507,7 +519,7 @@ class SitePositionPlotWidget(StyledChartWidget):
            reliable fallback.
 
         Values with unit strings are converted to metres by
-        :func:`extract_numeric` via :func:`parse_numeric_value`.
+        :func:`extract_numeric` + :func:`convert_to_metres`.
 
         :param xml_meta: The ``XMLMetadata`` dictionary.
         :return: ``(x_metres, y_metres)`` or *None*.
@@ -638,8 +650,12 @@ class SitePositionPlotWidget(StyledChartWidget):
         Path: ``SiteProjectData.ChunkSiteLocation.StagePosition
         .StagePosition.{X, Y}``
 
-        These values include unit strings (e.g. ``"-4.221 mm"``)
-        and are parsed with :func:`parse_numeric_value`.
+        Parsed with the same :func:`extract_numeric` +
+        :func:`convert_to_metres` recipe as the image stage path
+        (:meth:`_extract_stage_position`), so unit-suffixed strings
+        (``"-4.221 mm"``), scientific notation (``"-4.2E-03"``),
+        bare numbers, and attributed XML nodes (``{"_text": ...}``)
+        are all handled consistently.
 
         :param site_project_data: A single site's SiteProjectData.
         :return: ``(x_metres, y_metres)`` or *None*.
@@ -651,27 +667,74 @@ class SitePositionPlotWidget(StyledChartWidget):
                 .get("StagePosition", {})
                 .get("StagePosition", {})
             )
-            x_raw = stage_pos.get("X", "")
-            y_raw = stage_pos.get("Y", "")
+            if not isinstance(stage_pos, dict):
+                return None
+            x_raw = stage_pos.get("X")
+            y_raw = stage_pos.get("Y")
 
-            x_result = parse_numeric_value(x_raw)
-            y_result = parse_numeric_value(y_raw)
+            x_val = extract_numeric(x_raw)
+            y_val = extract_numeric(y_raw)
 
-            if x_result is not None and y_result is not None:
-                x_val, x_unit = x_result
-                y_val, y_unit = y_result
-                # Convert to metres if in mm
-                if "mm" in x_unit:
-                    x_val *= 1e-3
-                if "mm" in y_unit:
-                    y_val *= 1e-3
-                return x_val, y_val
+            if x_val is not None and y_val is not None:
+                return (
+                    convert_to_metres(x_val, x_raw),
+                    convert_to_metres(y_val, y_raw),
+                )
         except Exception:
             logger.debug(
                 "Failed to extract ChunkSiteLocation",
                 exc_info=True,
             )
         return None
+
+    @staticmethod
+    def _report_coincident_sites(
+        entries: list[dict],
+        positions: list[tuple[float, float]],
+    ) -> None:
+        """Warn when multiple sites resolve to identical coordinates.
+
+        Sites sharing an identical source position render as stacked
+        markers — visually indistinguishable from a single site.
+        This is genuine in ATC data when several lamella sites are
+        prepared from the same chunk and no per-site image stage
+        position is available to separate them.  The warning names
+        the sites and the coordinate source each used so overlap
+        seen in the plot can be traced to the data immediately.
+
+        Grouping uses exact float equality deliberately: identical
+        source strings parse to identical floats, so an exact match
+        means the *data* is shared, while merely-close positions
+        (a rendering concern) stay out of this report.
+
+        :param entries: Site entry dicts (parallel to positions).
+        :param positions: The chosen source ``(x_m, y_m)`` per
+            entry, as used for display.
+        """
+        groups: dict[tuple[float, float], list[int]] = {}
+        for i, pos in enumerate(positions):
+            groups.setdefault(pos, []).append(i)
+
+        for (x_m, y_m), idxs in groups.items():
+            if len(idxs) < 2:
+                continue
+            parts = []
+            for i in idxs:
+                e = entries[i]
+                has_img_x = e["image_stage_x_m"] is not None
+                has_img_y = e["image_stage_y_m"] is not None
+                if has_img_x and has_img_y:
+                    source = "image_stage"
+                elif not has_img_x and not has_img_y:
+                    source = "fallback"
+                else:
+                    source = "mixed"
+                parts.append(f"'{e['site_name']}' ({source})")
+            logger.warning(
+                f"{len(idxs)} sites share stage position "
+                f"({x_m * 1e3:.4f}, {y_m * 1e3:.4f}) mm and "
+                f"render as stacked markers: {', '.join(parts)}"
+            )
 
     # =================================================================
     # Image Deduplication

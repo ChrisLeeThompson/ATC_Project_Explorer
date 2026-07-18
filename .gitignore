@@ -27,3 +27,9 @@ monolithic_output.xml
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ---- Test / tooling caches ----
+.pytest_cache/
+
+# ---- Claude Code session data ----
+.claude/

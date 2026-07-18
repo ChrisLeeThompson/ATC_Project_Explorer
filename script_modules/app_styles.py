@@ -111,6 +111,7 @@ class StyleColors:
     BUTTON_DISABLED = "#3d5462"
     TEXT_PRIMARY = "#ffffff"
     TEXT_DISABLED = "#8498a4"
+    COMBO_CURRENT_ITEM_BG = BUTTON_HOVER  # Popup accent: highlighted row / current-item marker
     # Plot colors
     PLOT_LINE_COLOR = "#eb70a9" # plot line color, v2.5: #38003c, catbug: a1c7ea (blue), bright_blue: 9df1ed, catbug (glove): eb70a9, TEM blue: #00CEC8
     PLOT_SPINE_COLOR = "#ffffff"
@@ -144,6 +145,14 @@ class StyleDimensions:
     LAYOUT_VSPACING = 10
     CHECKBOX_SPACING = "16px"
     COMBOBOX_WIDTH = 180
+    COMBOBOX_CURRENT_ITEM_BAR_WIDTH = 4  # Marker bar on the popup's current item
+    # Width of the ::item borders (the popup's row separators), in px.
+    # Interpolated into ComboBoxStyles.default().
+    COMBOBOX_ITEM_BORDER = 1
+    # Inset of the marker bar from the row edges. Equal to the row-separator
+    # width so the bar sits between the separators; raise it to shorten the
+    # bar within the row.
+    COMBOBOX_CURRENT_ITEM_BAR_INSET = COMBOBOX_ITEM_BORDER
     SCROLLBAR_WIDTH = "12px"
     SCROLLBAR_HANDLE_MIN = "30px"
     SPLITTER_HANDLE_WIDTH = 6
@@ -219,7 +228,7 @@ class ApplicationText:
         "next image."
     )
 
-    IMAGE_NAME_LINK = "Click to show this image in its directory."
+    IMAGE_NAME_LINK = "Open containing directory."
     
 
 class ToolTips:
@@ -836,28 +845,25 @@ class ComboBoxStyles:
                 border: 1px solid {StyleColors.INPUT_BORDER};
                 /* border-radius: {StyleDimensions.BORDER_RADIUS_SMALL}; */
                 outline: none;
+                /* The highlight is painted by ::item:selected below; the
+                   palette-level value would be covered by it anyway. */
                 selection-background-color: transparent;
                 selection-color: {StyleColors.TEXT_PRIMARY};
             }}
             QComboBox QAbstractItemView::item {{
                 padding: 8px 8px;
-                border: 1px solid {StyleColors.INPUT_BORDER};
+                border: {StyleDimensions.COMBOBOX_ITEM_BORDER}px solid {StyleColors.INPUT_BORDER};
                 outline: none;
             }}
             QComboBox QAbstractItemView::item:hover {{
                 padding: 8px 8px;
                 background-color: {StyleColors.BUTTON_BG};
-                border: 1px solid {StyleColors.INPUT_BORDER};
+                border: {StyleDimensions.COMBOBOX_ITEM_BORDER}px solid {StyleColors.INPUT_BORDER};
                 /* border-radius: {StyleDimensions.BORDER_RADIUS_SMALL}; */
             }}
             QComboBox QAbstractItemView::item:selected {{
-                background-color: transparent;
-                border: 1px solid {StyleColors.INPUT_BORDER};
-                /* border-radius: {StyleDimensions.BORDER_RADIUS_SMALL}; */
-            }}
-            QComboBox QAbstractItemView::item:selected:hover {{
-                background-color: {StyleColors.BUTTON_BG};
-                border: 1px solid {StyleColors.INPUT_BORDER};
+                background-color: {StyleColors.COMBO_CURRENT_ITEM_BG};
+                border: {StyleDimensions.COMBOBOX_ITEM_BORDER}px solid {StyleColors.INPUT_BORDER};
                 /* border-radius: {StyleDimensions.BORDER_RADIUS_SMALL}; */
             }}
             {_vertical_scrollbar(StyleColors.INPUT_BG, prefix="QComboBox QAbstractItemView ")}

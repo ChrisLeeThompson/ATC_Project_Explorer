@@ -10,3 +10,7 @@
 *.ico  binary
 *.tif  binary
 *.tiff binary
+
+# Shell scripts must keep LF line endings to run correctly (a CRLF shebang
+# breaks `bash` on checkout under core.autocrlf=true).
+*.sh text eol=lf
