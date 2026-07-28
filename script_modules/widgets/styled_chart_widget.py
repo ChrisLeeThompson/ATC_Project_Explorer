@@ -106,7 +106,7 @@ class StyledChartWidget(QWidget):
 
         self.figure.patch.set_antialiased(False)
         self.ax.patch.set_antialiased(False)
-        self.figure.set_dpi(110)
+        self.figure.set_dpi(AppStyles.Dimensions.PLOT_NOMINAL_DPI)
         self.canvas.setStyleSheet(
             f"background-color: {AppStyles.Colors.MAIN_BG};"
         )

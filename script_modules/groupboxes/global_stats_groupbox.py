@@ -15,6 +15,10 @@ The global stats group box includes:
     - Mean milling duration
     - Mean thinning duration
     - Mean delay duration
+
+The statistics can be computed from a subset of sites (the site
+selection lives in the owning panel, which re-populates on change);
+the groupbox title reflects whether a subset is active.
 """
 import logging
 from PySide6.QtWidgets import (
@@ -29,6 +33,13 @@ from script_modules.consolidated_data_reader import get_global_stats
 logger = logging.getLogger(__name__)
 
 
+# Groupbox titles: default (empty/cleared), all sites selected, and
+# a proper subset selected (including the empty selection).
+_TITLE_DEFAULT = "Global Statistics"
+_TITLE_ALL = "Global Statistics: All Sites"
+_TITLE_SUBSET = "Global Statistics: Selected Sites"
+
+
 class GlobalStatsGroupBox(QGroupBox):
 
     def __init__(self, parent=None):
@@ -37,12 +48,16 @@ class GlobalStatsGroupBox(QGroupBox):
         self._create_widgets()
         # Setup layout
         self._setup_layout()
-    
+
     # -----------------------------------------------------------------
     # Public API
     # -----------------------------------------------------------------
 
-    def populate(self, metadata: dict) -> None:
+    def populate(
+        self,
+        metadata: dict,
+        selected_sites: set[str] | None = None,
+    ) -> None:
         """Populate the global stats labels from consolidated metadata.
 
         Delegates all data extraction and computation to the
@@ -51,8 +66,28 @@ class GlobalStatsGroupBox(QGroupBox):
 
         :param metadata: Consolidated metadata dictionary with
             top-level keys ``"ProjectData"`` and ``"Sites"``.
+        :param selected_sites: Site names to compute the statistics
+            from, or *None* for all sites. The statistics are
+            recomputed over the subset (``get_global_stats`` is a
+            pure function of the ``Sites`` list) and the groupbox
+            title reflects whether a proper subset is active.
         """
-        stats = get_global_stats(metadata)
+        sites = metadata.get("Sites", [])
+        if selected_sites is None:
+            shown = sites
+        else:
+            shown = [
+                s for s in sites
+                if s.get("SiteName", "Unknown") in selected_sites
+            ]
+
+        self.setTitle(
+            _TITLE_ALL
+            if selected_sites is None or len(shown) == len(sites)
+            else _TITLE_SUBSET
+        )
+
+        stats = get_global_stats({**metadata, "Sites": shown})
 
         self.number_of_sites_result_label.setText(stats.num_sites)
         self.mean_target_thickness_result_label.setText(stats.mean_target_thickness)
@@ -70,6 +105,7 @@ class GlobalStatsGroupBox(QGroupBox):
 
     def clear(self) -> None:
         """Reset all result labels to their default empty state."""
+        self.setTitle(_TITLE_DEFAULT)
         self.number_of_sites_result_label.setText("")
         self.mean_target_thickness_result_label.setText("")
         self.mean_milling_angle_result_label.setText("")
@@ -139,7 +175,7 @@ class GlobalStatsGroupBox(QGroupBox):
         for label in labels:
             label.setStyleSheet(AppStyles.Label.default())
 
-    
+
     def _setup_layout(self):
         # Layout
         main_layout = QGridLayout(self)
@@ -175,6 +211,6 @@ class GlobalStatsGroupBox(QGroupBox):
         main_layout.addWidget(self.mean_delay_duration_result_label, 10, 1, alignment=Qt.AlignmentFlag.AlignRight)
         # Set layout and group box style
         self.setLayout(main_layout)
-        self.setTitle("Global Statistics")
+        self.setTitle(_TITLE_DEFAULT)
         self.setStyleSheet(AppStyles.GroupBox.with_title_bold())
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)

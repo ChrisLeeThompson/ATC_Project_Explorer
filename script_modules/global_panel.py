@@ -44,6 +44,15 @@ class GlobalPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Last-populated metadata, kept so the Global Statistics can
+        # be recomputed when the site selection changes.
+        self._metadata: dict | None = None
+        # Canonical selected-site set, keyed by SiteName over the
+        # full metadata["Sites"] list. The panel is the single
+        # writer; children only render it and report user intent.
+        # (Duplicate SiteNames collapse to one entry — the same
+        # limitation as the name-keyed site_selected signals.)
+        self._selected_site_names: set[str] = set()
         # Create child widgets
         self._create_widgets()
         # Setup layout
@@ -85,6 +94,9 @@ class GlobalPanel(QWidget):
         :param metadata: Consolidated metadata dictionary with
             top-level keys ``"ProjectData"`` and ``"Sites"``.
         """
+        # Every (re)load resets the site selection to all sites.
+        self._metadata = metadata
+        self._selected_site_names = self._all_site_names()
         self.global_stats_groupbox.populate(metadata)
         self.global_site_preview_groupbox.populate(metadata)
         self.duration_bar_chart.populate(metadata)
@@ -93,6 +105,8 @@ class GlobalPanel(QWidget):
 
     def clear(self) -> None:
         """Reset all child groupboxes to their default empty state."""
+        self._metadata = None
+        self._selected_site_names = set()
         self.global_stats_groupbox.clear()
         self.global_site_preview_groupbox.clear()
         self.duration_bar_chart.clear()
@@ -128,6 +142,74 @@ class GlobalPanel(QWidget):
         )
         self.global_site_preview_groupbox.site_selected.connect(
             self.site_selected
+        )
+        # Site selection driving the Global Statistics: the chart's
+        # row checkboxes and master checkbox report user intent;
+        # this panel is the single writer of the canonical selection.
+        self.duration_bar_chart.site_check_toggled.connect(
+            self._on_site_check_toggled
+        )
+        self.duration_bar_chart.select_all_requested.connect(
+            self._on_select_all_sites
+        )
+        self.duration_bar_chart.deselect_all_requested.connect(
+            self._on_deselect_all_sites
+        )
+
+    # -----------------------------------------------------------------
+    # Site selection coordination
+    # -----------------------------------------------------------------
+
+    def _all_site_names(self) -> set[str]:
+        """Every site name in the last-populated metadata."""
+        if self._metadata is None:
+            return set()
+        return {
+            site.get("SiteName", "Unknown")
+            for site in self._metadata.get("Sites", [])
+        }
+
+    def _on_site_check_toggled(self, site_name: str, checked: bool) -> None:
+        """One chart row checkbox was toggled by the user."""
+        if self._metadata is None:
+            return
+        if checked:
+            self._selected_site_names.add(site_name)
+        else:
+            self._selected_site_names.discard(site_name)
+        # Push the set back so duplicate-named rows stay coherent;
+        # set_site_selection never emits, so this cannot loop.
+        self.duration_bar_chart.set_site_selection(
+            self._selected_site_names
+        )
+        self._refresh_global_stats()
+
+    def _on_select_all_sites(self) -> None:
+        """Select All requested (chart master checkbox)."""
+        if self._metadata is None:
+            return
+        self._selected_site_names = self._all_site_names()
+        self.duration_bar_chart.set_site_selection(
+            self._selected_site_names
+        )
+        self._refresh_global_stats()
+
+    def _on_deselect_all_sites(self) -> None:
+        """Deselect All requested (chart master checkbox)."""
+        if self._metadata is None:
+            return
+        self._selected_site_names = set()
+        self.duration_bar_chart.set_site_selection(
+            self._selected_site_names
+        )
+        self._refresh_global_stats()
+
+    def _refresh_global_stats(self) -> None:
+        """Recompute the Global Statistics from the selection."""
+        if self._metadata is None:
+            return
+        self.global_stats_groupbox.populate(
+            self._metadata, set(self._selected_site_names)
         )
 
     def _setup_layout(self):

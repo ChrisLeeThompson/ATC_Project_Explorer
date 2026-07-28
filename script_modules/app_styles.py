@@ -162,6 +162,23 @@ class StyleDimensions:
     PLOT_TITLE_FONT_SIZE = 11
     PLOT_LABEL_FONT_SIZE = 10
     PLOT_TOOLTIP_FONT_SIZE = 10
+    # Drawn per-row checkboxes on matplotlib charts (duration bar chart).
+    # Pixel values are logical pixels at the nominal figure dpi (110); the
+    # chart converts px -> points with PLOT_NOMINAL_DPI, never the runtime
+    # figure dpi (Qt multiplies figure dpi by the screen devicePixelRatio,
+    # which would double-count the scaling).
+    PLOT_NOMINAL_DPI = 110
+    PLOT_CHECKBOX_SIZE_PX = 18       # matches the 18x18 QCheckBox indicator
+    PLOT_CHECKBOX_GAP_PX = 4         # pad between the axis and the site names
+    # Gap between the checkbox column and the site names; matches the
+    # QCheckBox indicator-to-text spacing (CHECKBOX_SPACING, 16px).
+    PLOT_CHECKBOX_NAME_GAP_PX = 16
+    PLOT_CHECKBOX_RADIUS_PX = 4      # corner rounding, as BORDER_RADIUS_SMALL
+    # Partial-state dash inside the master checkbox atop the column.
+    PLOT_CHECKBOX_DASH_WIDTH_PX = 10
+    PLOT_CHECKBOX_DASH_HEIGHT_PX = 4
+    PLOT_TITLE_LEGEND_PAD_PT = 24    # title pad reserving the legend band
+    PLOT_TITLE_DEFAULT_PAD_PT = 6    # matplotlib default axes.titlepad
     # Preivew images dimensions
     PREVIEW_MAX_DIM_DEFAULT = 512
     # Global site preview dimensions
