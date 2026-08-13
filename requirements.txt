@@ -9,7 +9,8 @@
 # --- Core Dependencies ----------------------------------------
 
 # Qt GUI framework (widgets, signals/slots, threading)
-PySide6>=6.5.0
+# 6.7.1 is the version the app is developed and tested against.
+PySide6>=6.7.1
 
 # Numerical arrays for image data
 numpy>=1.24.0

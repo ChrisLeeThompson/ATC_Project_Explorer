@@ -14,6 +14,8 @@ Shared functionality:
     - Axes styling (facecolor, spine colors, label colors, ticks).
     - QGroupBox wrapper with the ``plot()`` stylesheet.
     - ``_clear_axes()`` to reset and restyle.
+    - ``_set_title_and_top_legend()`` for the standard title plus
+      horizontal frameless legend band above the axes.
     - Hover tooltip annotation and highlight rectangle creation.
     - Optional ``NavigationToolbar2QT`` (zoom, pan, home, save)
       enabled via the ``_toolbar_enabled`` class attribute.
@@ -241,6 +243,52 @@ class StyledChartWidget(QWidget):
         self.ax.clear()
         self._style_axes()
         self.canvas.draw_idle()
+
+    def _set_title_and_top_legend(
+        self, title: str, handles=None, labels=None
+    ) -> None:
+        """Set the axes title and the standard horizontal legend
+        band above the axes.
+
+        When *handles*/*labels* are omitted, legend entries are
+        auto-collected from artists created with ``label=`` (the
+        stacked-bar path). With no entries, the title gets the
+        default pad and no legend is created.
+
+        The legend sits in the title band, entirely above the
+        axes, so it can never overlap the plotted data. The
+        vertical space comes from the enlarged title pad; the
+        legend itself is taken OUT of constrained_layout — left
+        in, its full single-row width would be reserved as
+        horizontal margin and crush the axes at narrow window
+        widths.
+        """
+        if handles is None:
+            handles, labels = self.ax.get_legend_handles_labels()
+        has_legend = bool(handles)
+        self.ax.set_title(
+            title,
+            fontsize=AppStyles.Dimensions.PLOT_TITLE_FONT_SIZE,
+            pad=(AppStyles.Dimensions.PLOT_TITLE_LEGEND_PAD_PT
+                 if has_legend
+                 else AppStyles.Dimensions.PLOT_TITLE_DEFAULT_PAD_PT),
+        )
+        if not has_legend:
+            return
+        legend = self.ax.legend(
+            handles,
+            labels,
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncols=len(handles),
+            frameon=False,
+            fontsize=AppStyles.Dimensions.PLOT_LABEL_FONT_SIZE,
+            labelcolor=AppStyles.Colors.TEXT_PRIMARY,
+            handlelength=1.2,
+            columnspacing=1.0,
+            borderaxespad=0.2,
+        )
+        legend.set_in_layout(False)
 
     # -----------------------------------------------------------------
     # Hover Annotation Helpers

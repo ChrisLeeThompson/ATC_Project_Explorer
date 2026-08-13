@@ -54,10 +54,11 @@ _LEGEND_ORDER = [
     "Delay",
 ]
 
-# Dynamic height: per-bar height + fixed padding for title, axis,
-# legend, and margins.
+# Dynamic height: per-bar height + fixed padding for the title, the
+# horizontal legend band above the axes, the x-axis, and margins.
+# Matches the global duration chart, which shares the same chrome.
 _BAR_HEIGHT_PX = 28
-_CHART_PADDING_PX = 140
+_CHART_PADDING_PX = 160
 
 
 class SiteActivityBarChartWidget(StyledChartWidget):
@@ -182,18 +183,16 @@ class SiteActivityBarChartWidget(StyledChartWidget):
             FuncFormatter(self._format_xaxis_tick)
         )
 
-        # -- Axes labels and title ------------------------------------
+        # -- Axes labels ----------------------------------------------
         self.ax.set_yticks(y_positions)
         self.ax.set_yticklabels(act_names)
         self.ax.set_xlabel("\nDuration")
 
-        site_name = site_data.get("SiteName", "Site")
-        self.ax.set_title(
-            f"{site_name} — Activity Durations",
-            fontsize=AppStyles.Dimensions.PLOT_TITLE_FONT_SIZE,
-        )
-
-        # -- Legend (only steps that appear) --------------------------
+        # -- Title and legend (only steps that appear) ----------------
+        # The bars are drawn in one unlabelled barh call, so legend
+        # entries are built as Patch proxies and handed to the shared
+        # helper, which renders the same horizontal legend band as
+        # the global duration chart.
         legend_handles = []
         legend_labels = []
         for key in _LEGEND_ORDER:
@@ -203,16 +202,12 @@ class SiteActivityBarChartWidget(StyledChartWidget):
                 )
                 legend_labels.append(key)
 
-        if legend_handles:
-            self.ax.legend(
-                legend_handles,
-                legend_labels,
-                loc="upper right",
-                fontsize=AppStyles.Dimensions.PLOT_LABEL_FONT_SIZE,
-                facecolor=AppStyles.Colors.INPUT_BG,
-                edgecolor=AppStyles.Colors.PLOT_SPINE_COLOR,
-                labelcolor=AppStyles.Colors.TEXT_PRIMARY,
-            )
+        site_name = site_data.get("SiteName", "Site")
+        self._set_title_and_top_legend(
+            f"{site_name} — Activity Durations",
+            handles=legend_handles,
+            labels=legend_labels,
+        )
 
         # Pad x-axis so labels aren't clipped
         self.ax.set_xlim(0, x_max * 1.18 if x_max > 0 else 1)

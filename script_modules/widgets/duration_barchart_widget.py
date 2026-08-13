@@ -194,9 +194,6 @@ class DurationBarChartWidget(StyledChartWidget):
         y_positions = list(range(len(site_names)))
         bar_height = 0.5
 
-        # Track which segments have non-zero data for the legend
-        legend_segments: list[str] = []
-
         # Pre-compute segment index for efficient left-offset calculation
         _seg_index = {k: i for i, k in enumerate(_SEGMENT_ORDER)}
 
@@ -208,8 +205,6 @@ class DurationBarChartWidget(StyledChartWidget):
             # Skip entirely empty segments (e.g. Delay = 0 for all)
             if all(v == 0 for v in values_min):
                 continue
-
-            legend_segments.append(seg_key)
 
             # Compute left offsets (sum of all prior segments)
             seg_idx = _seg_index[seg_key]
@@ -284,34 +279,9 @@ class DurationBarChartWidget(StyledChartWidget):
         self._create_master_checkbox()
 
         # -- Title and legend ------------------------------------------
-        has_legend = bool(legend_segments)
-        self.ax.set_title(
-            "Site Durations",
-            fontsize=AppStyles.Dimensions.PLOT_TITLE_FONT_SIZE,
-            pad=(AppStyles.Dimensions.PLOT_TITLE_LEGEND_PAD_PT
-                 if has_legend
-                 else AppStyles.Dimensions.PLOT_TITLE_DEFAULT_PAD_PT),
-        )
-        if has_legend:
-            # Horizontal legend in the title band, entirely above
-            # the axes, so it can never overlap the bars.  The
-            # vertical space comes from the title pad; the legend
-            # itself is taken OUT of constrained_layout — left in,
-            # its full single-row width would be reserved as
-            # horizontal margin and crush the axes at narrow
-            # window widths.
-            legend = self.ax.legend(
-                loc="lower center",
-                bbox_to_anchor=(0.5, 1.0),
-                ncols=len(legend_segments),
-                frameon=False,
-                fontsize=AppStyles.Dimensions.PLOT_LABEL_FONT_SIZE,
-                labelcolor=AppStyles.Colors.TEXT_PRIMARY,
-                handlelength=1.2,
-                columnspacing=1.0,
-                borderaxespad=0.2,
-            )
-            legend.set_in_layout(False)
+        # Legend entries auto-collect from the labelled barh calls;
+        # all-zero segments were skipped above, so they get none.
+        self._set_title_and_top_legend("Site Durations")
 
         # Pad x-axis so labels aren't clipped
         self.ax.set_xlim(0, x_max * 1.18 if x_max > 0 else 1)

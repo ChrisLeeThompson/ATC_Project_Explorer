@@ -5,7 +5,7 @@
     "TemporaryConsolidatedJSONFileName": "_temp_consolidated_metadata.json",
     "ExportPlotDirectoryName": "Exported_Plots",
     "DefaultSavedJSONFileName": "Consolidated_ATC_Metadata.json",
-    "MinifyExportedJSON": false,
+    "MinifyExportedJSON": true,
     "ATCProjectDirectoryConfig": {
         "_comment": "Configuration for parsing ATC project directories. File names in the validation list must be in the ATC project root directory to begin parsing.",
         "ProjectRootDirectories": {

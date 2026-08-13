@@ -31,7 +31,7 @@ comparing results between two or more sites.
 - Optional (recommended): Pillow (image-loading fallback), tifffile (FEI/TFS
   TIFF metadata used for image overlays and the atlas montage)
 
-Exact versions are pinned in [`requirements.txt`](requirements.txt).
+Minimum versions are listed in [`requirements.txt`](requirements.txt).
 
 ## Install
 
