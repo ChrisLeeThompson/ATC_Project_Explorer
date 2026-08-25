@@ -143,7 +143,6 @@ class ATCDirectoryParser:
 
         self._parsed_data = result
 
-        # Log summary
         total_dirs = sum(
             len(site["ImageDirectories"]) for site in result
         )
@@ -203,7 +202,6 @@ class ATCDirectoryParser:
                 if d not in self._dirs_to_exclude
             )
 
-            # Collect image files in this directory
             image_files = sorted(
                 f for f in filenames
                 if Path(f).suffix.lower() in IMAGE_EXTENSIONS

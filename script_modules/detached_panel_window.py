@@ -6,25 +6,9 @@ or SitePanel, allowing the user to compare data from different
 sites (or the global project view) side by side.
 
 Each detached window owns its own panel instance and is fully
-independent of the MainWindow panels.
-
-Usage from MainWindow::
-
-    window = DetachedPanelWindow.for_global(
-        metadata=self._metadata,
-        project_name=project_name,
-        project_root=self._project_root,
-        parent=self,
-    )
-    window.show()
-
-    window = DetachedPanelWindow.for_site(
-        site_data=site_data,
-        project_name=project_name,
-        project_root=self._project_root,
-        parent=self,
-    )
-    window.show()
+independent of the MainWindow panels.  Instances are created via the
+:meth:`DetachedPanelWindow.for_global` and
+:meth:`DetachedPanelWindow.for_site` factory class methods.
 """
 import logging
 from pathlib import Path
@@ -41,7 +25,7 @@ from script_modules.site_panel import SitePanel
 
 logger = logging.getLogger(__name__)
 
-# Text for the top-level "Global" item, matching the main window.
+# Text for the top-level "Global" view label.
 GLOBAL_SITE_LABEL = AppStyles.AppText.GLOBAL_SITE_LABEL
 
 
@@ -68,24 +52,20 @@ class DetachedPanelWindow(QWidget):
             | Qt.WindowType.WindowCloseButtonHint
             | Qt.WindowType.WindowMinMaxButtonsHint
         )
-        # Apply the same background as the main window.
         self.setStyleSheet(
             f"QWidget#DetachedPanelWindow "
             f"{{ background-color: {AppStyles.Colors.MAIN_BG}; }}"
         )
         self.setObjectName("DetachedPanelWindow")
-        # Margins matching the main window left-column padding.
         self.setContentsMargins(
             AppStyles.Dimensions.MAIN_WINDOW_MARGIN,
             AppStyles.Dimensions.MAIN_WINDOW_MARGIN,
             AppStyles.Dimensions.MAIN_WINDOW_MARGIN,
             AppStyles.Dimensions.MAIN_WINDOW_MARGIN,
         )
-        # Window icon (same as MainWindow, via centralized ICON_PATH).
         if ICON_PATH.exists():
             self.setWindowIcon(QIcon(str(ICON_PATH)))
 
-        # Header
         self._header = HeaderGroupBox(parent=self)
 
         # The panel widget is set by the factory classmethods.
@@ -206,7 +186,7 @@ class DetachedPanelWindow(QWidget):
         layout.addWidget(self._panel, 1)
 
     def _apply_default_geometry(self) -> None:
-        """Size and centre the window relative to the primary
+        """Size and center the window relative to the primary
         screen, using dimensions similar to the main window."""
         screen = QApplication.primaryScreen()
         if screen is None:

@@ -12,9 +12,7 @@ selected lamella site, split into:
       Thinning), each in its own titled group box with a fixed
       width.
 
-Each tree view includes a search field and an Expand All checkbox,
-following the same interaction pattern as the ATC Project Explorer's
-``ProjectParametersTab``.
+Each tree view includes a search field and an Expand All checkbox.
 
 Layout::
 
@@ -23,13 +21,7 @@ Layout::
     │   ├── [Search] [Expand All]
     │   └── QTreeWidget
     └── Right: QScrollArea (horizontal)
-        ├── QGroupBox ("Preparation")
-        │   ├── [Search] [Expand All]
-        │   └── QTreeWidget
-        ├── QGroupBox ("Milling")
-        │   ├── [Search] [Expand All]
-        │   └── QTreeWidget
-        ├── QGroupBox ("Thinning")
+        ├── QGroupBox (one per workflow recipe, e.g. "Preparation")
         │   ├── [Search] [Expand All]
         │   └── QTreeWidget
         └── stretch

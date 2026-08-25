@@ -61,9 +61,9 @@ _PRECISE_POS_DIR = "PrecisePositioningLogImages"
 # Format: YYYY-MM-DD-HH-MM-SS-Activity-Name-match-information-image.png
 _FILENAME_RE = re.compile(
     r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-"  # timestamp prefix
-    r"(.+?)"                                     # activity name
-    r"-match-information-image"                   # suffix
-    r"\.\w+$",                                   # extension
+    r"(.+?)"                                  # activity name
+    r"-match-information-image"               # suffix
+    r"\.\w+$",                                # extension
     re.IGNORECASE,
 )
 
@@ -217,11 +217,6 @@ def _extract_activity_entries(
     Reads the most recent image for the activity and extracts
     patterning rectangle geometry plus supplementary metadata.
 
-    Front/rear splitting for activities with different trench
-    heights (e.g. Rough Milling) is handled downstream by the
-    display layer using project metadata fields
-    (``FrontTrenchHeight`` / ``RearTrenchHeight``).
-
     :param activity_name: Display name of the activity.
     :param rel_paths: Sorted list of relative image paths for
         this activity.
@@ -285,9 +280,6 @@ def _extract_from_image(
     :return: Pattern data dict, or *None* if no patterning
         information is present.
     """
-    # Quick byte scan: skip files that don't contain the
-    # PatterningInformation marker.  This avoids the cost
-    # of full XML parsing for images without pattern data.
     try:
         raw_bytes = image_path.read_bytes()
     except OSError:
@@ -296,8 +288,6 @@ def _extract_from_image(
         return None
 
     try:
-        # Reuse the bytes already read for the marker scan above so
-        # the file is not read from disk a second time.
         metadata = extract_xml_metadata(
             image_path, raw_bytes=raw_bytes
         )

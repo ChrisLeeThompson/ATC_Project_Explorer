@@ -1,5 +1,7 @@
 """
-Central repository for application styles and tool tips.
+Central repository for application styling: colors, dimensions,
+QSS style sheets, tooltips, user-facing text constants, and asset
+paths.
 """
 from pathlib import Path
 
@@ -10,9 +12,7 @@ from script_modules import __version__
 # Asset Paths
 # =====================================================================
 
-# Centralized asset directory path. All modules that need icon
-# or image assets should reference this rather than computing
-# their own relative paths.
+# Centralized asset directory path.
 ASSETS_DIR = Path(__file__).parent.parent / "script_assets"
 ICON_PATH = ASSETS_DIR / "catbug_waiting_color.png"
 
@@ -113,14 +113,14 @@ class StyleColors:
     TEXT_DISABLED = "#8498a4"
     COMBO_CURRENT_ITEM_BG = BUTTON_HOVER  # Popup accent: highlighted row / current-item marker
     # Plot colors
-    PLOT_LINE_COLOR = "#eb70a9" # plot line color, v2.5: #38003c, catbug: a1c7ea (blue), bright_blue: 9df1ed, catbug (glove): eb70a9, TEM blue: #00CEC8
+    PLOT_LINE_COLOR = "#eb70a9"
     PLOT_SPINE_COLOR = "#ffffff"
-    PLOT_PREPARATION_BAR_COLOR = "#2D67ED" #302DED" #"#2D67ED"
+    PLOT_PREPARATION_BAR_COLOR = "#2D67ED"
     PLOT_MILLING_BAR_COLOR = "#2EA2EC"
     PLOT_THINNING_BAR_COLOR = "#2DE0ED"
-    PLOT_LAMELLA_PLACEMENT_BAR_COLOR = "#F0A830" #"#f0a830" #2DEDBA" #"#CC7722" #"#13265C"
+    PLOT_LAMELLA_PLACEMENT_BAR_COLOR = "#F0A830"
     PLOT_DELAY_BAR_COLOR = "#1F6FA1"
-    IMAGE_VIEWER_CROSSHAIR_COLOR = "#00CEC8" #"eb70a9"
+    IMAGE_VIEWER_CROSSHAIR_COLOR = "#00CEC8"
     SITE_POSITION_PLOT_MARKER_COLOR = "#2EA2EC"
     SITE_POSITION_PLOT_MARKER_EDGE_COLOR = "#ffffff"
     SCALE_BAR_COLOR = "#8498a4"
@@ -169,7 +169,7 @@ class StyleDimensions:
     # which would double-count the scaling).
     PLOT_NOMINAL_DPI = 110
     PLOT_CHECKBOX_SIZE_PX = 18       # matches the 18x18 QCheckBox indicator
-    PLOT_CHECKBOX_GAP_PX = 4         # pad between the axis and the site names
+    PLOT_CHECKBOX_GAP_PX = 4         # pad between the checkbox column and the axis
     # Gap between the checkbox column and the site names; matches the
     # QCheckBox indicator-to-text spacing (CHECKBOX_SPACING, 16px).
     PLOT_CHECKBOX_NAME_GAP_PX = 16
@@ -179,7 +179,7 @@ class StyleDimensions:
     PLOT_CHECKBOX_DASH_HEIGHT_PX = 4
     PLOT_TITLE_LEGEND_PAD_PT = 24    # title pad reserving the legend band
     PLOT_TITLE_DEFAULT_PAD_PT = 6    # matplotlib default axes.titlepad
-    # Preivew images dimensions
+    # Preview image dimensions
     PREVIEW_MAX_DIM_DEFAULT = 512
     # Global site preview dimensions
     GLOBAL_SITE_PREVIEW_CARD_FIXED_WIDTH = 300
@@ -232,7 +232,9 @@ class ApplicationText:
 
     PREVIEW_PLACEHOLDER_TEXT = "Image not available"
 
-    DELETE_TEMP_METADATA_BUTTON =  "Delete the auto generated temporary metadata file and directory. Only available for auto-generated metadata files."
+    DELETE_TEMP_METADATA_BUTTON = (
+        "Delete the auto-generated temporary metadata file and its directory."
+    )
 
     PROJECT_NAME_BUTTON = "Open the project directory."
 
@@ -246,7 +248,7 @@ class ApplicationText:
     )
 
     IMAGE_NAME_LINK = "Open containing directory."
-    
+
 
 class ToolTips:
 
@@ -317,7 +319,7 @@ class LabelStyles:
     def clickable(color: str = StyleColors.TEXT_PRIMARY) -> str:
         """Stylesheet for a ClickableLabel — identical geometry to
         ``default()`` (same font and left/right margins, so the label
-        does not shift) but with a parameterised text ``color`` that the
+        does not shift) but with a parameterized text ``color`` that the
         widget swaps between rest / hover / pressed states.
         """
         return f"""
@@ -540,7 +542,7 @@ class GroupBoxStyles:
     @staticmethod
     def embedded() -> str:
         """Borderless groupbox with a visible title used as a section
-        header inside a parent container (e.g. SliceDataGroupBox)."""
+        header inside a parent container."""
         return f"""
             QGroupBox {{
                 border: none;
@@ -616,7 +618,7 @@ class ButtonStyles:
 
         Gives a QPushButton the appearance of a large title label
         (left-aligned, no border or background) while remaining a
-        clickable button.  Hover/pressed only change the text colour.
+        clickable button.  Hover/pressed only change the text color.
         The cursor is intentionally *not* overridden, so it stays the
         normal arrow rather than a pointing hand.
         """
@@ -826,7 +828,6 @@ class SliderStyles:
 
 class ComboBoxStyles:
 
-    # Arrow icon path (uses centralized ASSETS_DIR)
     _arrow_path = str(ASSETS_DIR / "down_arrow_white.svg").replace("\\", "/")
 
     @staticmethod
@@ -1033,7 +1034,7 @@ class ScrollAreaStyles:
 
     @staticmethod
     def horizontal_only() -> str:
-        """Style for horizontal-only scroll areas (e.g., for long file paths)."""
+        """Style for horizontal-only scroll areas (e.g. for long file paths)."""
         return f"""
                 QScrollArea {{
                     background-color: transparent;
@@ -1126,7 +1127,6 @@ class StatusBarStyles:
 
 class TreeWidgetStyles:
 
-    # Arrow icon paths (use centralized ASSETS_DIR)
     _down_arrow_path = str(ASSETS_DIR / "filled_down_arrow_white.svg").replace("\\", "/")
     _right_arrow_path = str(ASSETS_DIR / "filled_right_arrow_white.svg").replace("\\", "/")
 
@@ -1193,7 +1193,6 @@ class TreeWidgetStyles:
 
 
 class TextEditStyles:
-    """Styles for QTextEdit widgets."""
 
     @staticmethod
     def metadata() -> str:
@@ -1273,10 +1272,9 @@ class AppStyles:
         Call this once immediately after ``NavigationToolbar2QT(canvas, parent)``
         is constructed.
 
-        Args:
-            toolbar: A ``NavigationToolbar2QT`` instance.
-            color:   Any Qt-parseable color string (default: ``TEXT_PRIMARY``
-                     white, ``"#ffffff"``).
+        :param toolbar: A ``NavigationToolbar2QT`` instance.
+        :param color: Any Qt-parseable color string (default:
+            ``TEXT_PRIMARY`` white, ``"#ffffff"``).
         """
         from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
         from PySide6.QtCore import Qt
@@ -1299,7 +1297,7 @@ class AppStyles:
                 continue
 
             # Paint a new pixmap: draw the original (preserving shape), then
-            # flood-fill the opaque region with the target colour.
+            # flood-fill the opaque region with the target color.
             colored_pm = QPixmap(source_pm.size())
             colored_pm.fill(Qt.GlobalColor.transparent)
             painter = QPainter(colored_pm)

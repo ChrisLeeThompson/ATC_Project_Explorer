@@ -36,7 +36,7 @@ def load_image(
     :param max_dim: If provided, downsample so neither axis
         exceeds this value.  Pass ``None`` to load at full
         resolution.
-    :return: NumPy array (2D for greyscale, 3D for colour),
+    :return: NumPy array (2D for grayscale, 3D for color),
         or *None* on failure.
     """
     try:
@@ -47,11 +47,9 @@ def load_image(
         )
         return None
 
-    # Drop alpha channel if present (RGBA → RGB)
     if img.ndim == 3 and img.shape[2] == 4:
         img = img[:, :, :3]
 
-    # Stride-based downsample
     if max_dim is not None and img.ndim >= 2:
         h, w = img.shape[:2]
         factor = max(1, max(h, w) // max_dim)
@@ -65,14 +63,11 @@ def numpy_to_qpixmap(arr: np.ndarray) -> QPixmap | None:
     """Convert a 2D grayscale NumPy array to a ``QPixmap``.
 
     Applies a per-image min-max stretch to ``uint8`` to match
-    matplotlib's default ``imshow(..., cmap='gray')`` behaviour
-    across ``uint8`` / ``uint16`` / ``float32`` inputs.  This is
-    what users see today for dim 16-bit SEM acquisitions where
-    the data only spans a fraction of the type's range.
+    matplotlib's default ``imshow(..., cmap='gray')`` behavior
+    across ``uint8`` / ``uint16`` / ``float32`` inputs.
 
-    SEM/FIB images are always grayscale.  If a 3D array is passed
-    (unexpected), the first channel is used and a warning is
-    logged rather than silently producing a colour image.
+    SEM/FIB images are always grayscale; if a 3D array is passed,
+    the first channel is used and a warning is logged.
 
     :param arr: 2D NumPy array (grayscale).  3D arrays are
         accepted defensively but discouraged.
@@ -87,8 +82,6 @@ def numpy_to_qpixmap(arr: np.ndarray) -> QPixmap | None:
     if arr.ndim != 2 or arr.size == 0:
         return None
 
-    # Per-image min-max stretch → uint8 (matches matplotlib's
-    # default vmin/vmax for cmap='gray')
     lo = float(arr.min())
     hi = float(arr.max())
     if hi > lo:

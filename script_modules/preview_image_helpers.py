@@ -4,12 +4,6 @@ Preview Image Helpers
 Shared utilities for finding and loading lamella preview
 images.  Used by both ``SitePreviewGroupBox`` (site panel)
 and ``GlobalSitePreviewGroupBox`` (global panel).
-
-Extracted from ``site_preview_groupbox.py`` so both modules
-can share image-selection logic without duplication.
-
-Rendering uses lightweight QPixmap/QLabel rather than
-matplotlib figures to keep per-thumbnail overhead minimal.
 """
 import logging
 from pathlib import Path
@@ -25,9 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 # Directory / filename markers for the eucentric-tilt-match image
-# that represents a site in the spatial atlas.  Consolidated here (the
-# home of site-image path resolution) so both the atlas widget and the
-# preview media loader resolve it the same way.
+# that represents a site in the spatial atlas.
 _PRECISE_POS_DIR = "PrecisePositioningLogImages"
 _ETM_FILENAME_MARKER = "Eucentric-Tilt-match-information-image"
 
@@ -42,11 +34,11 @@ def load_preview_qimage(
 ) -> QImage | None:
     """Load an image file and return a downsampled QImage.
 
-    Identical decoding to :func:`load_preview_pixmap`, but returns a
-    ``QImage`` — which, unlike ``QPixmap``, may be constructed on a
-    worker thread.  The preview media loader uses this to decode
-    thumbnails off the GUI thread; callers on the GUI thread wrap the
-    result with ``QPixmap.fromImage``.
+    Returns a ``QImage`` — which, unlike ``QPixmap``, may be
+    constructed on a worker thread.  The preview media loader uses
+    this to decode thumbnails off the GUI thread; callers on the GUI
+    thread wrap the result with ``QPixmap.fromImage`` (see
+    :func:`load_preview_pixmap`).
 
     Attempts native Qt loading first.  Falls back to PIL for formats
     Qt cannot decode (e.g. 16-bit TIFF), and handles JPEG files saved
@@ -55,7 +47,7 @@ def load_preview_qimage(
 
     :param path: Absolute path to the image file.
     :param max_dim: Maximum pixel dimension for downsampling.
-        Defaults to :data:`PREVIEW_MAX_DIM_DEFAULT` (512).
+        Defaults to :data:`AppStyles.Dimensions.PREVIEW_MAX_DIM_DEFAULT`.
     :return: Scaled QImage, or *None* on failure.
     """
     qimage = QImage(str(path))
@@ -69,12 +61,10 @@ def load_preview_qimage(
             )
             return None
 
-    # Downsample if either dimension exceeds max_dim.
-    # FastTransformation (nearest-neighbour) is used here
-    # because this is purely a memory-reduction step.  The
-    # final display scaling in PreviewLabel._rescale applies
-    # SmoothTransformation for presentation quality, so using
-    # smooth here as well would double-blur the image.
+    # Downsample with FastTransformation: this is purely a
+    # memory-reduction step, and the final display scaling in
+    # PreviewLabel._rescale applies SmoothTransformation — smooth
+    # here as well would double-blur the image.
     if max(qimage.width(), qimage.height()) > max_dim:
         qimage = qimage.scaled(
             max_dim,
@@ -99,7 +89,7 @@ def load_preview_pixmap(
 
     :param path: Absolute path to the image file.
     :param max_dim: Maximum pixel dimension for downsampling.
-        Defaults to :data:`PREVIEW_MAX_DIM_DEFAULT` (512).
+        Defaults to :data:`AppStyles.Dimensions.PREVIEW_MAX_DIM_DEFAULT`.
     :return: Scaled QPixmap, or *None* on failure.
     """
     qimage = load_preview_qimage(path, max_dim=max_dim)
@@ -113,7 +103,7 @@ def _load_via_pil_qimage(path: Path) -> QImage | None:
     """Fallback loader using PIL for images Qt cannot decode.
 
     Handles 16-bit grayscale TIFFs common in electron
-    microscopy by normalising to 8-bit before conversion
+    microscopy by normalizing to 8-bit before conversion
     to QImage.  Returns a ``QImage`` (not a ``QPixmap``) so it is
     safe to call off the GUI thread.
 
@@ -127,13 +117,11 @@ def _load_via_pil_qimage(path: Path) -> QImage | None:
         # Context-manage the open so the file handle is released
         # deterministically rather than at GC time (on Windows a
         # lingering handle can transiently lock project files).
-        # All pixel-reading work — including tobytes() for the
-        # no-conversion RGB pass-through — must run inside the
-        # block.  Rebinding ``img`` to a derived (memory-backed)
-        # image is safe: the context manager still closes the
-        # original file-backed image on exit.
+        # All pixel-reading work — including tobytes() — must run
+        # inside the block; rebinding ``img`` to a derived image
+        # still lets the original file-backed image close on exit.
         with Image.open(path) as img:
-            # Normalise 16-bit / float grayscale to 8-bit
+            # Normalize 16-bit / float grayscale to 8-bit
             if img.mode in ("I", "I;16", "F"):
                 arr = np.array(img, dtype=np.float64)
                 lo, hi = arr.min(), arr.max()
@@ -143,7 +131,6 @@ def _load_via_pil_qimage(path: Path) -> QImage | None:
                     arr = np.zeros_like(arr)
                 img = Image.fromarray(arr.astype(np.uint8), mode="L")
 
-            # Convert to RGB or RGBA for QImage
             if img.mode == "L":
                 img = img.convert("RGB")
             elif img.mode not in ("RGB", "RGBA"):
@@ -179,7 +166,7 @@ def _load_via_pil_qimage(path: Path) -> QImage | None:
 
 class PreviewLabel(QLabel):
     """QLabel that displays a preview thumbnail with
-    aspect-ratio-preserving scaling, or a centred placeholder
+    aspect-ratio-preserving scaling, or a centered placeholder
     when no image is set.
 
     Stores the original QPixmap internally and rescales it
@@ -255,7 +242,7 @@ class PreviewLabel(QLabel):
         self.setPixmap(scaled)
 
     def _show_placeholder(self):
-        """Show centred placeholder text."""
+        """Show centered placeholder text."""
         self.setStyleSheet(AppStyles.Label.preview_placeholder())
         self.setText(AppStyles.AppText.PREVIEW_PLACEHOLDER_TEXT)
 

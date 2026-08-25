@@ -1,41 +1,21 @@
 """
 Consolidated Data Reader
 
-Module provides functions for extracting computed values from the
-consolidated ATC project metadata JSON structure. It serves as the
-data-access layer between the consolidated metadata (built by
+Functions for extracting computed values from the consolidated ATC
+project metadata JSON structure.  This is the data-access layer
+between the consolidated metadata (built by
 ``consolidated_metadata_writer``) and the UI components that display
 project statistics, per-site details, and plot data.
 
-The module contains:
-    - A public ``get_global_stats()`` function that computes
-      project-wide averages for display in the global stats panel.
-    - A public ``get_site_stats()`` function that extracts
-      per-site values for display in the site stats panel.
-    - General-purpose parsing and formatting helpers that are
-      reused across global and site-specific extraction functions.
-
-Typical usage::
-
-    from script_modules.consolidated_data_reader import (
-        get_global_stats,
-        get_site_stats,
-    )
-
-    stats = get_global_stats(metadata)
-    label.setText(stats.mean_target_thickness)
-
-    site_stats = get_site_stats(site_data)
-    label.setText(site_stats.target_thickness)
+``get_global_stats()`` computes project-wide means for the global
+stats panel; ``get_site_stats()`` extracts per-site values for the
+site stats panel.
 """
 import logging
 from dataclasses import dataclass
 
-# parse_numeric_value / parse_duration_to_seconds / format_seconds now
-# live in value_utils.  They are imported here both for this module's
-# own use and as a backward-compatible re-export: existing importers
-# (e.g. the bar-chart widgets) still do
-# ``from consolidated_data_reader import format_seconds``.
+# Imported for this module's own use and re-exported for existing
+# importers (e.g. the bar-chart widgets).
 from script_modules.value_utils import (
     format_seconds,
     parse_duration_to_seconds,
@@ -71,10 +51,8 @@ class GlobalStats:
 
 @dataclass
 class SiteStats:
-    """Pre-formatted statistics for a single site, ready for
-    direct display in the UI.
-
-    All fields are strings ready for ``QLabel.setText()``.
+    """Pre-formatted statistics for a single site, ready for direct
+    display in the UI.  All fields are strings for ``QLabel.setText()``.
     """
     target_thickness: str
     milling_angle: str
@@ -92,9 +70,7 @@ class SiteStats:
 class CategorizedDurations:
     """Per-site activity durations bucketed by workflow step.
 
-    All values are in seconds. Used by both the stats functions
-    and the chart widgets to avoid duplicating the step-
-    categorisation logic.
+    All values are in seconds.
     """
     preparation_s: int = 0
     lamella_placement_s: int = 0
@@ -205,13 +181,12 @@ def get_global_stats(metadata: dict) -> GlobalStats:
         if dwp_seconds is not None:
             durations_no_placement_s.append(dwp_seconds)
 
-        # Lamella placement = total - milling (without placement)
+        # Lamella placement = total - without placement
         if td_seconds is not None and dwp_seconds is not None:
             placement_s = max(td_seconds - dwp_seconds, 0)
             if placement_s > 0:
                 placement_durations_s.append(placement_s)
 
-        # Categorize activities by workflow step
         cat = categorize_site_durations(site)
         if cat.preparation_without_placement_s > 0:
             prep_without_placement_durations_s.append(
@@ -327,7 +302,7 @@ def get_site_stats(site_data: dict) -> SiteStats:
     else:
         lamella_placement_duration = na
 
-    # -- Categorise activities by workflow step ------------------------
+    # -- Categorize activities by workflow step ------------------------
     cat = categorize_site_durations(site_data)
 
     result = SiteStats(
@@ -366,7 +341,7 @@ def get_site_stats(site_data: dict) -> SiteStats:
 def categorize_site_durations(
     site_data: dict,
 ) -> CategorizedDurations:
-    """Categorise a single site's activity durations by workflow
+    """Categorize a single site's activity durations by workflow
     step.
 
     Builds the activity-to-step mapping from the site's recipe
@@ -514,9 +489,8 @@ def extract_milling_angle(
     Path: ``SiteProjectData.Workflow.Recipe[*].Activities
     .MillingAngleActivity.MillingAngle``
 
-    The Recipe node is a list of workflow steps. This method
-    iterates through them and returns the MillingAngle from
-    the first step that contains a MillingAngleActivity.
+    The Recipe node is a list of workflow steps; the value comes
+    from the first step that contains a MillingAngleActivity.
 
     Expected format: ``"12 °"``
 
@@ -577,10 +551,8 @@ def extract_lamella_width(
 # Parsing / Formatting Helpers
 # =====================================================================
 
-# ``parse_numeric_value``, ``parse_duration_to_seconds``, and
-# ``format_seconds`` moved to ``value_utils`` (imported at the top of
-# this module).  The formatting helpers below remain here because they
-# consume the reader's own schema-derived value/unit lists.
+# The formatting helpers below consume the reader's own schema-derived
+# value/unit lists, so they live here rather than in value_utils.
 def format_value_with_unit(value: float, unit: str) -> str:
     """Format a single numeric value with a unit string.
 

@@ -171,7 +171,7 @@ class _SitePreviewCard(QGroupBox):
 
         Clickability follows whether each image *path existed* — i.e.
         whether a tooltip (the filename) was provided — matching the
-        original on-demand behaviour even when a decode failed.
+        on-demand loading path even when a decode failed.
 
         :param site_name: Display name shown as the groupbox title.
         :param left_pixmap: Left thumbnail QPixmap, or *None*.
@@ -385,14 +385,14 @@ class GlobalSitePreviewGroupBox(QGroupBox):
             self._cards.append(card)
 
         logger.info(
-            f"GlobalSitePreviewGroupBox populated with "
+            f"Global site previews populated: "
             f"{len(self._cards)} cards"
         )
 
     def clear(self) -> None:
         """Remove all preview cards."""
         self._clear_cards()
-        logger.info("GlobalSitePreviewGroupBox cleared")
+        logger.info("Global site previews cleared")
 
     # -----------------------------------------------------------------
     # Setup

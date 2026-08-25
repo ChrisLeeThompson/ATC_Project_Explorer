@@ -109,7 +109,6 @@ class SiteActivityBarChartWidget(StyledChartWidget):
             if secs is None:
                 secs = 0
 
-            # Determine color key
             step = step_map.get(name, "")
             if name == "Lamella Placement":
                 color_key = "Lamella Placement"
@@ -225,7 +224,7 @@ class SiteActivityBarChartWidget(StyledChartWidget):
         self.canvas.draw_idle()
         logger.info(
             f"Site activity bar chart plotted: "
-            f"{len(activities)} activity/activities for "
+            f"{len(activities)} activities for "
             f"'{site_name}'"
         )
 

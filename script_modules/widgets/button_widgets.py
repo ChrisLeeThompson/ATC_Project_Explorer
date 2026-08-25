@@ -3,7 +3,7 @@ Module for styled button widgets.
 """
 from PySide6.QtWidgets import QPushButton
 from PySide6.QtGui import QIcon
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import QSize
 from script_modules.app_styles import AppStyles, ASSETS_DIR
 
 
@@ -50,7 +50,7 @@ class CancelButton(StyledButton):
 class OpenInNewWindowButton(StyledButton):
 
     def __init__(self, parent=None):
-        super().__init__(parent, "Open In New Window")
+        super().__init__(parent, "Open in New Window")
 
 
 class PreviousButton(StyledButton):
@@ -73,16 +73,15 @@ class ResetViewButton(QPushButton):
         self.setIcon(QIcon(icon_path))
         self.setIconSize(QSize(24, 24))
         self.setFixedSize(32, 32)
-        self.setToolTip("Reset view")
+        self.setToolTip("Reset the view.")
         self.setStyleSheet(AppStyles.Button.reset_view() + AppStyles.AppToolTips.default())
-        # self.setCursor(Qt.CursorShape.PointingHandCursor)
 
 
 class PatternToggleButton(QPushButton):
     """Checkable button for pattern activity selection.
 
     Uses the standard button style with the checked state
-    highlighted in the hover colour for visual distinction.
+    highlighted in the hover color for visual distinction.
     """
 
     def __init__(self, parent=None, button_text: str = ""):

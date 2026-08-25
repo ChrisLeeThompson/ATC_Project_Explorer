@@ -46,7 +46,6 @@ class SearchableTreePanel(QGroupBox):
 
     def _create_widgets(self):
         """Create search field, expand checkbox, and tree widget."""
-        # Search field
         self.search_line_edit = QLineEdit()
         self.search_line_edit.setPlaceholderText("Search")
         self.search_line_edit.setStyleSheet(AppStyles.LineEdit.search())
@@ -58,7 +57,6 @@ class SearchableTreePanel(QGroupBox):
         )
         self.expand_all_checkbox.setChecked(True)
 
-        # Search row container
         self._search_row = QWidget()
         search_row_layout = QHBoxLayout(self._search_row)
         search_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -282,11 +280,9 @@ class SearchableTreePanel(QGroupBox):
         )
 
         if item_matches:
-            # Show this item and all descendants
             self._set_item_visible(item, True)
             return True
 
-        # Recurse into children
         child_matches = False
         for i in range(item.childCount()):
             if self._filter_item(item.child(i), search):

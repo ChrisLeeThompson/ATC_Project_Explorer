@@ -1,16 +1,8 @@
 """
 Configuration Manager
 
-Module handles loading and accessing the ATC Project Explorer
-configuration file. The configuration file is a JSON file that
-contains settings for directory parsing, validation, and
-consolidated metadata output.
-
-The ConfigManager class loads the JSON file once at startup and
-provides typed property accessors for each configuration section.
-All downstream consumers (parsers, groupboxes, widgets) should
-obtain their settings through this class rather than reading
-the JSON directly or hardcoding values.
+Loads the ATC Project Explorer JSON configuration file once at startup
+and exposes typed property accessors for its settings.
 """
 import json
 import logging
@@ -104,20 +96,12 @@ class ConfigManager:
 
     @property
     def parse_project_root_files(self) -> list[dict]:
-        """List of root file parsing rules (Name and Parse flag).
-
-        Each entry is a dict with 'Name' (filename) and 'Parse'
-        (bool indicating whether to parse the file).
-        """
+        """Root-file parsing rules: dicts with ``Name`` and ``Parse`` keys."""
         return self._directory_config.get("ParseProjectRootFiles", [])
 
     @property
     def files_to_parse(self) -> list[str]:
-        """Filenames that have Parse set to true in the config.
-
-        Convenience property that filters parse_project_root_files
-        to only those with Parse=True and returns just the names.
-        """
+        """Filenames whose ``Parse`` flag is true in the config."""
         return [
             entry["Name"]
             for entry in self.parse_project_root_files
@@ -133,7 +117,7 @@ class ConfigManager:
 
     @property
     def consolidated_metadata_template(self) -> dict:
-        """Full template dictionary for building consolidated metadata."""
+        """The ConsolidatedMetadataConfig section of the config file."""
         return self._consolidated_metadata_config
 
     # --- Version ---

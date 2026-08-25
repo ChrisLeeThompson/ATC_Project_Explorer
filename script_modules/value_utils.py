@@ -6,30 +6,21 @@ scalar values that appear throughout ATC/FEI metadata: numeric
 value+unit strings, durations, and physical-length unit
 conversions.
 
-This module sits at the bottom of the dependency stack — it imports
-only ``re`` and ``logging`` and depends on no other project module.
-Parsers, the consolidated-data reader, and the widget layer all
-depend *downward* on it, which keeps the dependency direction clean
-(parsers -> value_utils; reader -> value_utils; widgets ->
-value_utils and reader).
-
 Unit conversion is driven by a single canonical table,
 :data:`UNIT_TO_METRES`, so there is exactly one place where the
-recognised length units (and their micro-sign spellings) are
-defined.  The three public converters differ only in their output
-unit and in their historical case-handling / fallback policy, which
-are preserved individually so behaviour matches the code they
-replaced:
+recognized length units (and their micro-sign spellings) are
+defined.  The three public converters differ in their output unit
+and fallback policy:
 
-    - :func:`to_metres`        — value+unit string -> metres, or
-                                 *None* on an unrecognised unit
-                                 (case-sensitive lookup).
-    - :func:`to_micrometres`   — value+unit string -> µm; unitless
-                                 or unrecognised units are assumed
-                                 to already be µm; 0.0 on failure.
-    - :func:`convert_to_metres`— already-extracted numeric + its raw
-                                 source -> metres; an unrecognised or
-                                 absent unit is assumed to be metres.
+    - :func:`to_metres`         — value+unit string -> metres, or
+                                  *None* on an unrecognized unit
+                                  (case-sensitive lookup).
+    - :func:`to_micrometres`    — value+unit string -> µm; unitless
+                                  or unrecognized units are assumed
+                                  to already be µm; 0.0 on failure.
+    - :func:`convert_to_metres` — already-extracted numeric + its raw
+                                  source -> metres; an unrecognized or
+                                  absent unit is assumed to be metres.
 """
 import logging
 import re
@@ -42,13 +33,13 @@ logger = logging.getLogger(__name__)
 # Canonical unit table
 # =====================================================================
 
-# Single source of truth for length-unit -> metres factors.  All three
-# micro-sign spellings are included so both the Latin-1 micro sign
+# Single source of truth for length-unit -> metres factors.  Both
+# micro-sign codepoints are included so the Latin-1 micro sign
 # (U+00B5) and the Greek small letter mu (U+03BC) resolve correctly.
 UNIT_TO_METRES: dict[str, float] = {
     "nm": 1e-9,
     "µm": 1e-6,        # Latin-1 micro sign (0xB5)
-    "\u00b5m": 1e-6,   # explicit micro sign codepoint (same as above)
+    "\u00b5m": 1e-6,   # duplicate of the literal above; keeps the codepoint explicit
     "\u03bcm": 1e-6,   # Greek lowercase mu
     "um": 1e-6,        # ASCII fallback
     "mm": 1e-3,
@@ -60,7 +51,7 @@ UNIT_TO_METRES: dict[str, float] = {
 # Numeric value+unit parsing
 # =====================================================================
 
-# Regex for splitting a "value unit" string WITH scientific-notation
+# Regex for splitting a "value unit" string with scientific-notation
 # support (e.g. "-192.585 nm", "7.8125E-08 m").
 _VALUE_UNIT_RE = re.compile(
     r"([+-]?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(.*)"
@@ -159,9 +150,7 @@ def extract_numeric(value) -> float | None:
 # Duration parsing / formatting
 # =====================================================================
 
-# .NET ``TimeSpan`` form with a leading day count: ``d.hh:mm:ss``
-# (e.g. "1.01:40:59").  FEI software emits this for activities that
-# span more than a day — most notably overnight ``Delay`` activities.
+# .NET ``TimeSpan`` form with a leading day count: ``d.hh:mm:ss``.
 # Anchored and requiring the literal '.', so it can never match a
 # plain ``HH:MM:SS`` string.
 _DURATION_DAYS_RE = re.compile(
@@ -193,8 +182,7 @@ def parse_duration_to_seconds(duration_str: str) -> int | None:
 
     text = duration_str.strip()
 
-    # Day form first: the anchored '.' means this never matches a
-    # plain HH:MM:SS string, which falls through to the split below.
+    # Day form first; plain HH:MM:SS falls through to the split below.
     day_match = _DURATION_DAYS_RE.match(text)
     if day_match:
         days, hours, minutes, seconds = (
@@ -237,13 +225,12 @@ def to_metres(raw) -> float | None:
     """Parse a value+unit string and convert to metres.
 
     Unit lookup is case-sensitive (FEI metadata always uses the
-    canonical lowercase spellings), matching the historical
-    behaviour of the image-viewer overlay path.
+    canonical lowercase spellings).
 
     :param raw: Value string (e.g. ``"-6.18 µm"``), or a bare
         numeric / ``{"_text": ...}`` dict.
     :return: Value in metres, or *None* if the unit is not
-        recognised or the string cannot be parsed.
+        recognized or the string cannot be parsed.
     """
     parsed = parse_unit_value(raw)
     if parsed is None:
@@ -259,7 +246,7 @@ def to_micrometres(raw) -> float:
     """Parse a value string to µm.
 
     Handles ``"17 µm"``, ``"398 nm"``, ``"1.5 μm"``, ``"0 m"``,
-    etc.  Unitless or unrecognised units are assumed to already be
+    etc.  Unitless or unrecognized units are assumed to already be
     µm.  Returns 0.0 on failure.
 
     :param raw: Value string (stringified if not already a str).
@@ -271,8 +258,7 @@ def to_micrometres(raw) -> float:
     value, unit = result
     factor = UNIT_TO_METRES.get(unit.lower().strip())
     if factor is None:
-        # Unitless or unrecognised — assume the value is already µm
-        # (preserves the historical ``_parse_um`` catch-all).
+        # Unitless or unrecognized — assume the value is already µm.
         return value
     # metres-per-unit -> µm-per-unit
     return value * factor * 1e6
@@ -284,7 +270,7 @@ def convert_to_metres(numeric_value: float, raw_value) -> float:
 
     Used for stage positions from the StageCollection custom
     section, where values are stored as strings with unit suffixes
-    (e.g. ``"-4.770 mm"``).  An unrecognised or absent unit is
+    (e.g. ``"-4.770 mm"``).  An unrecognized or absent unit is
     assumed to be metres.
 
     :param numeric_value: The already-extracted numeric value.

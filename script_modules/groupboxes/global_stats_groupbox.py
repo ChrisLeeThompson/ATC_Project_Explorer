@@ -1,20 +1,11 @@
 """
 Global Stats GroupBox
 
-The global stats group box is used to display statistics about the currently loaded project.
-The global stats group box includes:
-- QLabels to display:
-    - Number of sites in the project
-    - Mean target thickness across all sites
-    - Mean milling angle across all sites
-    - Mean lamella width across all sites
-    - Mean duration of all milling operations across all sites
-    - Mean duration (no lamella placement)
-    - Mean preparation duration
-    - Mean lamella placement duration
-    - Mean milling duration
-    - Mean thinning duration
-    - Mean delay duration
+Group box (titled "Global Statistics") listing project-wide values:
+number of sites, mean target thickness, mean milling angle, mean
+lamella width, and the mean duration breakdown (total, without
+lamella placement, lamella placement, preparation without lamella
+placement, milling, thinning, delay).
 
 The statistics can be computed from a subset of sites (the site
 selection lives in the owning panel, which re-populates on change);
@@ -44,9 +35,7 @@ class GlobalStatsGroupBox(QGroupBox):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Create widgets
         self._create_widgets()
-        # Setup layout
         self._setup_layout()
 
     # -----------------------------------------------------------------
@@ -117,12 +106,12 @@ class GlobalStatsGroupBox(QGroupBox):
         self.mean_milling_duration_result_label.setText("")
         self.mean_thinning_duration_result_label.setText("")
         self.mean_delay_duration_result_label.setText("")
+
     # -----------------------------------------------------------------
     # Widget / Layout Setup
     # -----------------------------------------------------------------
 
     def _create_widgets(self):
-        # Create labels
         self.number_of_sites_label = QLabel("Number of sites", parent=self)
         self.mean_target_thickness_label = QLabel("Mean target thickness", parent=self)
         self.mean_milling_angle_label = QLabel("Mean milling angle", parent=self)
@@ -134,7 +123,6 @@ class GlobalStatsGroupBox(QGroupBox):
         self.mean_milling_duration_label = QLabel("Mean milling duration", parent=self)
         self.mean_thinning_duration_label = QLabel("Mean thinning duration", parent=self)
         self.mean_delay_duration_label = QLabel("Mean delay duration", parent=self)
-        # Create results labels
         self.number_of_sites_result_label = QLabel("", parent=self)
         self.mean_target_thickness_result_label = QLabel("", parent=self)
         self.mean_milling_angle_result_label = QLabel("", parent=self)
@@ -171,15 +159,11 @@ class GlobalStatsGroupBox(QGroupBox):
             self.mean_thinning_duration_result_label,
             self.mean_delay_duration_result_label,
         ]
-        # Set styles
         for label in labels:
             label.setStyleSheet(AppStyles.Label.default())
 
-
     def _setup_layout(self):
-        # Layout
         main_layout = QGridLayout(self)
-        # Add widgets to layout
         main_layout.setContentsMargins(
             AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
             AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
@@ -209,7 +193,6 @@ class GlobalStatsGroupBox(QGroupBox):
         main_layout.addWidget(self.mean_thinning_duration_result_label, 9, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.mean_delay_duration_label, 10, 0)
         main_layout.addWidget(self.mean_delay_duration_result_label, 10, 1, alignment=Qt.AlignmentFlag.AlignRight)
-        # Set layout and group box style
         self.setLayout(main_layout)
         self.setTitle(_TITLE_DEFAULT)
         self.setStyleSheet(AppStyles.GroupBox.with_title_bold())

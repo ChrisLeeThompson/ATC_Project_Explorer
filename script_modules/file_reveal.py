@@ -3,10 +3,7 @@ Reveal a file in the OS file manager.
 
 Thin Qt/OS boundary helper: on Windows it opens Explorer with the file
 selected (highlighted); on other platforms it falls back to opening the
-file's containing folder. Kept in its own module so both the metadata tab
-and the full-resolution dialog can share one implementation, and so the
-platform branch can be unit-tested by monkeypatching ``sys.platform`` and
-``subprocess.run``.
+file's containing folder.
 """
 import logging
 import os
@@ -33,12 +30,12 @@ def reveal_in_file_manager(path) -> bool:
         could not be opened.
     """
     if not path:
-        logger.warning("Cannot reveal image: no path provided.")
+        logger.warning("Cannot reveal file: no path provided.")
         return False
 
     target = Path(path)
     if not target.exists():
-        logger.warning("Cannot reveal image: path not found: %s", target)
+        logger.warning("Cannot reveal file: path not found: %s", target)
         return False
 
     if sys.platform.startswith("win"):
@@ -55,7 +52,6 @@ def reveal_in_file_manager(path) -> bool:
                 "explorer /select failed for %s: %s — opening folder instead.",
                 target, exc,
             )
-            # Fall through to the folder-open fallback below.
 
     # Cross-platform fallback: open the containing folder.
     opened = QDesktopServices.openUrl(

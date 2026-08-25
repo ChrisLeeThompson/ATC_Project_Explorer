@@ -2,8 +2,7 @@
 Validation Utilities
 
 Shared validation functions for verifying ATC project directory
-structure. Used by both the drag-and-drop widget and the load
-data groupbox to avoid duplicating validation logic.
+structure.
 """
 import logging
 from pathlib import Path

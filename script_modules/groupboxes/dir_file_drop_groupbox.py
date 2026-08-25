@@ -1,10 +1,8 @@
 """
 Dir/File Drop GroupBox
 
-This module handles the directory / file drop group box.
-The group box includes:
-- The dir file drop widget, which is a QLabel that supports drag and drop of directories and JSON files.
-- The group box is used to load an ATC project directory or consolidated metadata JSON file.
+Group box hosting the drag-and-drop target used to load an ATC
+project directory or a consolidated metadata JSON file.
 """
 from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QSizePolicy
@@ -19,18 +17,15 @@ class DirFileDropGroupBox(QGroupBox):
     def __init__(self, validation_files: list[str] = None, parent=None):
         super().__init__(parent)
         self.validation_files: list[str] = validation_files or []
-        # Script assets paths (centralized via ASSETS_DIR)
         self._color_path = ASSETS_DIR / "catbug_color_2.png"
         self._grayscale_path = ASSETS_DIR / "catbug_grayscale_2.png"
-        # Create widgets
         self._create_widgets()
-        # Setup layout
         self._setup_layout()
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Fixed
         )
-    
+
     def _create_widgets(self):
         self.dir_file_drop_widget = DirFileDropLabel(
             color_path=self._color_path,
@@ -39,7 +34,7 @@ class DirFileDropGroupBox(QGroupBox):
             validation_files=self.validation_files,
             parent=self
         )
-    
+
     def _setup_layout(self):
         main_layout = QVBoxLayout(self)
         main_layout.addWidget(self.dir_file_drop_widget, alignment=Qt.AlignmentFlag.AlignCenter)

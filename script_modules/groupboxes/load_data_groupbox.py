@@ -1,24 +1,18 @@
 """
 Load Data GroupBox
 
-This module handles the load data group box.
-The group box includes:
-- Button to load an ATC project directory via folder dialog.
-- Button to load a JSON file containing previously parsed ATC project metadata.
-- Button to save the current metadata to a user-chosen location.
-- Button to delete the temporary JSON metadata file from the project directory.
+Group box with four buttons: load an ATC project directory via a
+folder dialog, load a previously saved metadata JSON file, save the
+current metadata to a user-chosen location, and delete the temporary
+JSON metadata file from the project directory.
 
 Each button opens the appropriate dialog and emits a signal with the
-selected path. The parent tab handles the actual data operations
-(parsing, loading, saving, deleting).
+selected path; MainWindow performs the actual data operations.
 
-Button State Management
------------------------
-- Load ATC Project: Always enabled (disabled externally during parsing).
-- Load Metadata File: Always enabled (disabled externally during parsing).
-- Save Metadata File: Disabled until metadata is loaded.
-- Delete Metadata File: Disabled until a temp file path is set and the
-  file exists on disk.
+Button states: the two load buttons are enabled except while a load
+is in progress (disabled by MainWindow); Save is disabled until
+metadata is loaded; Delete is disabled until a temp file path is set
+and the file exists on disk.
 """
 import logging
 from pathlib import Path
@@ -57,20 +51,16 @@ class LoadDataGroupBox(QGroupBox):
     validation_failed = Signal(str)
 
     def __init__(self, validation_files: list[str] = None,
-                 default_save_filename: str = "consolidated_atc_metadata.json",
+                 default_save_filename: str = "Consolidated_ATC_Metadata.json",
                  parent=None):
         super().__init__(parent)
         self.validation_files: list[str] = validation_files or []
         self._default_save_filename: str = default_save_filename
         self._temp_file_path: Path | None = None
         self._last_browse_directory: str = ""
-        # Create widgets
         self._create_widgets()
-        # Setup layout
         self._setup_layout()
-        # Connect button signals
         self._connect_signals()
-        # Set initial button states
         self._set_initial_button_states()
 
     # -----------------------------------------------------------------
@@ -179,7 +169,6 @@ class LoadDataGroupBox(QGroupBox):
         self._last_browse_directory = directory
         path = Path(directory)
 
-        # Validate the selected directory
         is_valid, missing_files = validate_atc_directory(
             path, self.validation_files
         )

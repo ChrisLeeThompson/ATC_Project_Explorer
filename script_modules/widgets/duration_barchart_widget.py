@@ -1,7 +1,7 @@
 """
 Duration Bar Chart Widget
 
-Horizontal stacked bar chart showing per-site milling durations
+Horizontal stacked bar chart showing per-site process durations
 broken down by workflow step. Each bar has up to five segments
 in execution order:
 
@@ -92,7 +92,7 @@ def _px_to_pt(px: float) -> float:
 
 
 class DurationBarChartWidget(StyledChartWidget):
-    """Horizontal stacked bar chart for per-site milling durations."""
+    """Horizontal stacked bar chart of per-site process durations."""
 
     # Emitted when the user chooses "Open site" from the bar
     # context menu.  Carries the site name string.
@@ -116,8 +116,8 @@ class DurationBarChartWidget(StyledChartWidget):
         super().__init__(parent)
         self._segment_rects: list[dict] = []
         # Site names indexed by bar position (the "y_index" stored in
-        # each segment rect).  Built in reversed metadata order, so it
-        # is navigated by name rather than index elsewhere.
+        # each segment rect).  The list is in reversed metadata order,
+        # which is why lookups elsewhere go by name rather than index.
         self._site_names: list[str] = []
         # Drawn checkbox artists, one dict per bar row (parallel to
         # _site_names): {"name", "ab", "box"}.
@@ -194,7 +194,6 @@ class DurationBarChartWidget(StyledChartWidget):
         y_positions = list(range(len(site_names)))
         bar_height = 0.5
 
-        # Pre-compute segment index for efficient left-offset calculation
         _seg_index = {k: i for i, k in enumerate(_SEGMENT_ORDER)}
 
         # Draw each segment layer
@@ -364,14 +363,14 @@ class DurationBarChartWidget(StyledChartWidget):
     def _create_row_checkboxes(self) -> None:
         """Create one drawn checkbox per bar row, all checked.
 
-        The checkboxes form a vertical column to the LEFT of the
+        The checkboxes form a vertical column to the left of the
         site titles: every box anchors at the same fixed offset
         from the left spine, chosen to clear the widest title
         (titles are right-aligned, so their left edges are ragged).
         Each checkbox is an ``AnnotationBbox`` holding a rounded
         ``FancyBboxPatch`` in a ``DrawingArea`` (fixed physical
         size, specified in points). Checked/unchecked is a
-        fill/edge colour flip matching the application's QCheckBox
+        fill/edge color flip matching the application's QCheckBox
         indicator style.
         """
         gap_pt = _px_to_pt(AppStyles.Dimensions.PLOT_CHECKBOX_GAP_PX)
@@ -382,7 +381,7 @@ class DurationBarChartWidget(StyledChartWidget):
         # Text width depends only on font and dpi — never on the
         # layout — so the widest title can be measured before the
         # first draw. The extent is in physical pixels at the
-        # RUNTIME dpi, so this one conversion uses the runtime dpi
+        # runtime dpi, so this one conversion uses the runtime dpi
         # (the devicePixelRatio cancels between the measurement
         # and the point-based offset).
         renderer = self.canvas.get_renderer()
@@ -413,7 +412,7 @@ class DurationBarChartWidget(StyledChartWidget):
                 area,
                 xy=(0.0, i),
                 # x in axes fraction (0 = left spine), y in data
-                # (integer row centres) — survives resizes because
+                # (integer row centers) — survives resizes because
                 # the transform re-evaluates every draw.
                 xycoords=self.ax.get_yaxis_transform(),
                 xybox=(-self._column_offset_pt, 0.0),
@@ -664,7 +663,7 @@ class DurationBarChartWidget(StyledChartWidget):
         label_index = self._find_tick_label_index(event)
         if label_index is not None:
             # Site titles behave like the project-title link:
-            # accent colour + pointing hand while hovered.
+            # accent color + pointing hand while hovered.
             self._set_hovered_tick_label(
                 self.ax.get_yticklabels()[label_index]
             )
@@ -788,7 +787,7 @@ class DurationBarChartWidget(StyledChartWidget):
             or event.x is None
         ):
             return None
-        # Both new hit targets live left of the axes; skip the
+        # Both hit targets live left of the axes; skip the
         # per-artist extent checks while the cursor is over the
         # plot area (the common case).
         if event.x >= self.ax.bbox.x0:
@@ -878,7 +877,7 @@ class DurationBarChartWidget(StyledChartWidget):
 
         go_to_action = menu.addAction(f"Open {site_name}")
         open_new_action = menu.addAction(
-            f"Open {site_name} in new window"
+            f"Open {site_name} in New Window"
         )
 
         chosen = menu.exec(QCursor.pos())

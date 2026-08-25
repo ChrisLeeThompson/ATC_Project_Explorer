@@ -1,15 +1,13 @@
 """
 Clickable Label
 
-A QLabel that reads as normal body text but behaves like the project-title
-link: white at rest, accent-blue on hover (with a pointing-hand cursor) and a
-darker blue while pressed, emitting ``clicked`` on release. Because it is a
-plain QLabel underneath it keeps word-wrap and the standard label margins, so
-it is a drop-in replacement for a file-name label with no layout shift.
+A QLabel that reads as normal body text but behaves like the
+project-title link: accent-blue on hover (with a pointing-hand
+cursor), darker blue while pressed, emitting ``clicked`` on release.
 
-When made non-clickable (``set_clickable(False)``) it is inert: plain white
-text, arrow cursor, and no hover/press/click — used for the placeholder or
-unresolved-path state.
+When made non-clickable (``set_clickable(False)``) it is inert, with
+the default text color and cursor and no hover/press/click — used for
+the placeholder or unresolved-path state.
 """
 from PySide6.QtWidgets import QLabel
 from PySide6.QtCore import Qt, Signal
@@ -34,9 +32,9 @@ class ClickableLabel(QLabel):
     # -----------------------------------------------------------------
 
     def set_clickable(self, clickable: bool):
-        """Enable or disable the link behaviour.
+        """Enable or disable the link behavior.
 
-        When disabled the label shows plain white text with the default
+        When disabled the label shows the default text color and
         cursor and ignores mouse interaction.
         """
         self._clickable = clickable
@@ -80,7 +78,7 @@ class ClickableLabel(QLabel):
                 and event.button() == Qt.MouseButton.LeftButton):
             self._pressed = False
             inside = self.rect().contains(event.position().toPoint())
-            # Restore hover colour if released over the label, else rest.
+            # Restore hover color if released over the label, else rest.
             self._apply_color(
                 AppStyles.Colors.BUTTON_HOVER if inside
                 else AppStyles.Colors.TEXT_PRIMARY

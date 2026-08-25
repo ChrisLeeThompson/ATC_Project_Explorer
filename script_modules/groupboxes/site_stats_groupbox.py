@@ -1,19 +1,10 @@
 """
 Site Stats GroupBox
 
-The site statistics group box is used to display statistics about the selected lamella site.
-The site statistics group box includes:
-- QLabels to display:
-    - Target thickness
-    - Milling angle
-    - Lamella width
-    - Duration
-    - Duration (no lamella placement)
-    - Lamella placement duration
-    - Preparation duration (no lamella placement)
-    - Milling duration
-    - Thinning duration
-    - Delay duration
+Group box (titled "Site Statistics") listing the selected site's
+values: target thickness, milling angle, lamella width, and the
+duration breakdown (total, without lamella placement, lamella
+placement, preparation, milling, thinning, delay).
 """
 import logging
 from PySide6.QtWidgets import (
@@ -32,9 +23,7 @@ class SiteStatsGroupBox(QGroupBox):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Create widgets
         self._create_widgets()
-        # Setup layout
         self._setup_layout()
 
     # -----------------------------------------------------------------
@@ -88,7 +77,6 @@ class SiteStatsGroupBox(QGroupBox):
     # -----------------------------------------------------------------
 
     def _create_widgets(self):
-        # Create labels
         self.target_thickness_label = QLabel("Target thickness", parent=self)
         self.milling_angle_label = QLabel("Milling angle", parent=self)
         self.lamella_width_label = QLabel("Lamella width", parent=self)
@@ -99,7 +87,6 @@ class SiteStatsGroupBox(QGroupBox):
         self.milling_duration_label = QLabel("Milling duration", parent=self)
         self.thinning_duration_label = QLabel("Thinning duration", parent=self)
         self.delay_duration_label = QLabel("Delay duration", parent=self)
-        # Create results labels
         self.target_thickness_result_label = QLabel("", parent=self)
         self.milling_angle_result_label = QLabel("", parent=self)
         self.lamella_width_result_label = QLabel("", parent=self)
@@ -133,14 +120,11 @@ class SiteStatsGroupBox(QGroupBox):
             self.thinning_duration_result_label,
             self.delay_duration_result_label,
         ]
-        # Set styles
         for label in labels:
             label.setStyleSheet(AppStyles.Label.default())
 
     def _setup_layout(self):
-        # Layout
         main_layout = QGridLayout(self)
-        # Add widgets to layout
         main_layout.setContentsMargins(
             AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
             AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
@@ -168,7 +152,6 @@ class SiteStatsGroupBox(QGroupBox):
         main_layout.addWidget(self.thinning_duration_result_label, 8, 1, alignment=Qt.AlignmentFlag.AlignRight)
         main_layout.addWidget(self.delay_duration_label, 9, 0)
         main_layout.addWidget(self.delay_duration_result_label, 9, 1, alignment=Qt.AlignmentFlag.AlignRight)
-        # Set layout and group box style
         self.setLayout(main_layout)
         self.setTitle("Site Statistics")
         self.setStyleSheet(AppStyles.GroupBox.with_title_bold())

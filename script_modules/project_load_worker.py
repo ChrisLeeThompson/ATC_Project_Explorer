@@ -6,36 +6,13 @@ JSON metadata files.  Runs I/O-bound operations on a ``QThread``
 so the main UI thread remains responsive, with progress signals
 for status bar and progress bar updates.
 
-Two entry modes are supported:
+Two entry modes are supported, each with a factory class method:
 
-- **Directory parsing**: runs ProjectDataParser, StatisticsParser,
-  ATCDirectoryParser, builds consolidated metadata, and saves a
-  temporary JSON file.
-- **JSON file loading**: loads and validates a previously saved
-  consolidated metadata JSON file.
-
-Usage from MainWindow::
-
-    worker = ProjectLoadWorker.for_directory(
-        project_path=Path("..."),
-        sub_directories_to_exclude=[...],
-        temp_output_file=Path("..."),
-        minify=False,
-    )
-
-    # — or —
-
-    worker = ProjectLoadWorker.for_json_file(
-        file_path=Path("..."),
-    )
-
-    thread = QThread()
-    worker.moveToThread(thread)
-    thread.started.connect(worker.run)
-    worker.finished.connect(...)
-    worker.progress.connect(...)
-    worker.error.connect(...)
-    thread.start()
+- **Directory parsing** (:meth:`ProjectLoadWorker.for_directory`):
+  runs the three parsers, builds consolidated metadata, saves a
+  temporary JSON file, and preloads preview media.
+- **JSON file loading** (:meth:`ProjectLoadWorker.for_json_file`):
+  loads and validates a previously saved consolidated metadata file.
 """
 import logging
 from pathlib import Path
@@ -145,8 +122,8 @@ class ProjectLoadWorker(QObject):
     # -----------------------------------------------------------------
 
     def request_cancel(self) -> None:
-        """Request cancellation.  The worker checks this flag
-        between processing steps."""
+        """Request cancellation.  The worker polls this flag between
+        processing steps and inside the parse/build/media loops."""
         self._cancelled_flag = True
 
     # -----------------------------------------------------------------
@@ -165,13 +142,13 @@ class ProjectLoadWorker(QObject):
             elif self._mode == "json":
                 self._run_json_load()
             else:
-                self.error.emit(f"Unknown worker mode: {self._mode}")
+                self.error.emit("Internal error: unknown load mode")
         except Exception:
             logger.error(
                 "Worker encountered an unhandled exception",
                 exc_info=True,
             )
-            self.error.emit("An unexpected error occurred.")
+            self.error.emit("An unexpected error occurred")
 
     # -----------------------------------------------------------------
     # Directory Parsing Pipeline
@@ -197,7 +174,7 @@ class ProjectLoadWorker(QObject):
                 "Failed to parse ProjectData.dat", exc_info=True
             )
             self.error.emit(
-                f"Failed to parse ProjectData.dat in "
+                f"Failed to parse ProjectData.dat for "
                 f"{project_path.name}"
             )
             return
@@ -216,7 +193,7 @@ class ProjectLoadWorker(QObject):
                 "Failed to parse Statistics.txt", exc_info=True
             )
             self.error.emit(
-                f"Failed to parse Statistics.txt in "
+                f"Failed to parse Statistics.txt for "
                 f"{project_path.name}"
             )
             return
@@ -243,7 +220,7 @@ class ProjectLoadWorker(QObject):
                 "Failed to scan directories", exc_info=True
             )
             self.error.emit(
-                f"Failed to scan directories in "
+                f"Failed to scan directories for "
                 f"{project_path.name}"
             )
             return
@@ -326,7 +303,6 @@ class ProjectLoadWorker(QObject):
             )
             media = None
 
-        # Build result
         site_names = [
             site["SiteName"]
             for site in metadata.get("Sites", [])
@@ -376,16 +352,13 @@ class ProjectLoadWorker(QObject):
             )
             return
 
-        # Tolerate a hand-edited JSON file with a site missing its
-        # SiteName: skip it rather than raising KeyError (which would
-        # surface as a generic "unexpected error").
+        # Tolerate a hand-edited JSON file: skip sites missing SiteName.
         site_names = [
             site.get("SiteName")
             for site in metadata.get("Sites", [])
             if site.get("SiteName")
         ]
 
-        # Resolve project root from saved metadata
         project_root = None
         stored_root = metadata.get("ProjectRootPath", "")
         if stored_root:
@@ -457,9 +430,7 @@ class ProjectLoadWorker(QObject):
 
     def _is_cancelled(self) -> bool:
         """Check the cancellation flag and emit the cancelled
-        signal if set.
-
-        Used at step boundaries, where emitting once is correct.
+        signal if set.  Used at step boundaries.
 
         :return: True if cancellation was requested.
         """
@@ -472,17 +443,16 @@ class ProjectLoadWorker(QObject):
     def _cancel_requested(self) -> bool:
         """Pure cancellation check for the inner parse/build loops.
 
-        Reads the flag *without* emitting (unlike :meth:`_is_cancelled`,
-        which emits at step boundaries) — the inner loops poll this many
-        times, and the single ``cancelled`` emit is done once by the
-        ``except OperationCancelled`` handlers instead.  Passed as the
-        ``cancel_check`` callable so the parser and writer poll it
-        without depending on this worker or Qt.
+        Reads the flag without emitting (unlike :meth:`_is_cancelled`);
+        the single ``cancelled`` emit is done by the
+        ``except OperationCancelled`` handlers.  Passed as the
+        ``cancel_check`` callable (see :mod:`script_modules.cancellation`)
+        so the parsers and writer poll it without depending on Qt.
 
         The flag is a plain ``bool`` set once from the GUI thread
-        (:meth:`request_cancel`) and read many times here on the worker
-        thread; that set-once / read-many pattern is safe under the GIL
-        without additional locking.
+        (:meth:`request_cancel`) and read many times on the worker
+        thread; that set-once / read-many pattern is GIL-safe without
+        additional locking.
 
         :return: True if cancellation was requested.
         """

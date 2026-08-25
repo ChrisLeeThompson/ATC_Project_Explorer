@@ -258,7 +258,7 @@ class StyledChartWidget(QWidget):
         The legend sits in the title band, entirely above the
         axes, so it can never overlap the plotted data. The
         vertical space comes from the enlarged title pad; the
-        legend itself is taken OUT of constrained_layout — left
+        legend itself is kept out of constrained_layout — left
         in, its full single-row width would be reserved as
         horizontal margin and crush the axes at narrow window
         widths.

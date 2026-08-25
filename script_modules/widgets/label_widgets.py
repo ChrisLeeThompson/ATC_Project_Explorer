@@ -17,8 +17,8 @@ class StartupLabel(StyledLabel):
 
     def __init__(self, parent=None):
         super().__init__(parent, label_text="")
-        label_text = "Drop an ATC project directory or previously generated JSON metadata file\n" + \
-                     "onto Catbug to explore ATC metadata.\n\n" + \
+        label_text = "Drop an ATC project directory or a previously saved metadata file\n" + \
+                     "onto Catbug to explore ATC project data.\n\n" + \
                      "Alternatively, use the Load ATC Project button or the Load Metadata File button to begin."
         self.setText(label_text)
         self.setStyleSheet(AppStyles.Label.large_label())

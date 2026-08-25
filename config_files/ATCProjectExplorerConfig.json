@@ -7,7 +7,7 @@
     "DefaultSavedJSONFileName": "Consolidated_ATC_Metadata.json",
     "MinifyExportedJSON": true,
     "ATCProjectDirectoryConfig": {
-        "_comment": "Configuration for parsing ATC project directories. File names in the validation list must be in the ATC project root directory to begin parsing.",
+        "_comment": "Configuration for parsing ATC project directories. File names in the validation list must be present in the project root directory for parsing to begin.",
         "ProjectRootDirectories": {
             "DirectoriesToExclude": []
         },

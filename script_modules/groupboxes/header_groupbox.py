@@ -1,11 +1,10 @@
 """
 Header GroupBox
 
-This module handles the header group box.
-The header group box is used to provide context for the user about the currently loaded project and selected site.
-The header group box includes:
-- QPushButton (flat, link-styled) that displays the project name and, when clicked, opens the project directory in the OS file manager
-- QLabel to display the selected site name or "Global Project Data" if no site is selected
+Provides context about the loaded project and selected site: a flat,
+link-styled button showing the project name (clicking it opens the
+project directory in the OS file manager) and a "Site selected:"
+label naming the current site or the Global Project Data view.
 """
 import logging
 from pathlib import Path
@@ -28,19 +27,13 @@ class HeaderGroupBox(QGroupBox):
         # open it when the project-name button is clicked.  None until a
         # project with a resolvable root is loaded.
         self._project_root: Path | None = None
-        # Create widgets
         self._create_widgets()
-        # Setup layout
         self._setup_layout()
-        # Open the project directory when the project name is clicked
         self.project_name_button.clicked.connect(
             self._on_project_name_clicked
         )
 
     def _create_widgets(self):
-        # The project name is a flat, link-styled button: it looks like
-        # a title but opens the project directory when clicked.  A
-        # pointing-hand cursor on hover signals that it is clickable.
         self.project_name_button = QPushButton("", parent=self)
         self.project_name_button.setCursor(
             Qt.CursorShape.PointingHandCursor
@@ -55,9 +48,7 @@ class HeaderGroupBox(QGroupBox):
         self.site_name_label.setStyleSheet(AppStyles.Label.large_label())
 
     def _setup_layout(self):
-        # Layout
         main_layout = QVBoxLayout(self)
-        # Add widgets to layout
         main_layout.setContentsMargins(
             AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
             AppStyles.Dimensions.LAYOUT_CONTENTS_MARGIN,
@@ -67,7 +58,6 @@ class HeaderGroupBox(QGroupBox):
         main_layout.setSpacing(AppStyles.Dimensions.LAYOUT_VSPACING)
         main_layout.addWidget(self.project_name_button)
         main_layout.addWidget(self.site_name_label)
-        # Set layout and group box style
         self.setLayout(main_layout)
         self.setStyleSheet(AppStyles.GroupBox.default_main_background())
 

@@ -1,9 +1,9 @@
 """
 Consolidated Metadata Writer
 
-Module handles building, saving, loading, and validating the
-consolidated ATC project metadata JSON file. The consolidated
-file merges data from four sources into a single structure:
+Builds, saves, loads, and validates the consolidated ATC project
+metadata JSON file. The consolidated file merges data from four
+sources into a single structure:
 
     1. ProjectData.dat (XML) — instrument info, project-level
        metadata, and per-site parameters/workflow data.
@@ -13,10 +13,10 @@ file merges data from four sources into a single structure:
        rectangle geometry and measured beam current, extracted
        by ``pattern_data_parser``.
 
-The output structure follows the ConsolidatedMetadataConfig
-template from the configuration file:
+The output structure:
 
     {
+        "ProjectRootPath": "C:/path/to/project",
         "ProjectData": { ... },
         "Sites": [
             {
@@ -40,6 +40,7 @@ Usage:
         project_data=project_parser.parse(),
         statistics_data=statistics_parser.parse(),
         directory_data=directory_parser.parse(),
+        project_root_path=project_root,
     )
     save_consolidated_metadata(metadata, output_path)
     loaded = load_consolidated_metadata(output_path)
@@ -93,19 +94,15 @@ def build_consolidated_metadata(
         directory. Stored in the output so that image paths can be
         resolved when loading from a saved JSON file.  Also used
         to resolve image paths for pattern data extraction.
-    :param cancel_check: Optional callable polled once per site
-        (before its pattern data is extracted).  When it returns True,
-        the build stops immediately by raising
-        :class:`OperationCancelled`.  Per-site pattern extraction is
-        the dominant cost, so this bounds cancellation latency to
-        roughly one site's work.
+    :param cancel_check: Optional callable polled once per site;
+        when it returns True the build stops by raising
+        :class:`OperationCancelled` (see
+        :mod:`script_modules.cancellation`).
     :return: Consolidated metadata dictionary.
     :raises OperationCancelled: If ``cancel_check`` returns True.
     """
-    # Extract project-level info (instrument + project metadata)
     project_info = _extract_project_level_data(project_data)
 
-    # Build lookup maps keyed by site name
     site_project_data_map = _build_site_project_data_map(project_data)
     statistics_map = _build_statistics_map(statistics_data)
     directory_map = _build_directory_map(directory_data)
@@ -119,10 +116,8 @@ def build_consolidated_metadata(
         if cancel_check is not None and cancel_check():
             raise OperationCancelled()
 
-        # Site project data (parameters, workflow, etc.)
         site_pd = site_project_data_map.get(site_name, {})
 
-        # Statistics for this site
         stats = statistics_map.get(site_name)
         if stats:
             statistics_entry = {
@@ -139,14 +134,12 @@ def build_consolidated_metadata(
                 "Activities": [],
             }
 
-        # Directory / image data for this site
         dir_entry = directory_map.get(site_name, {})
         image_directories = dir_entry.get("ImageDirectories", [])
         relative_site_path = dir_entry.get(
             "RelativeSiteDirectoryPath", ""
         )
 
-        # Pattern data from PrecisePositioningLogImages
         pattern_data: list[dict] = []
         if project_root_path is not None and image_directories:
             pattern_data = extract_site_pattern_data(
@@ -256,7 +249,6 @@ def validate_consolidated_json(data: dict | Path) -> bool:
                  file to validate.
     :return: True if valid, False otherwise.
     """
-    # If given a path, load it first
     if isinstance(data, (str, Path)):
         path = Path(data)
         if not path.exists():
@@ -290,12 +282,10 @@ def _extract_project_level_data(project_data: dict) -> dict:
     """
     result = {}
 
-    # Instrument info
     instrument = project_data.get("Instrument")
     if instrument:
         result["Instrument"] = instrument
 
-    # Project-level fields (excluding Sites)
     project = project_data.get("Project", {})
     if isinstance(project, dict):
         project_fields = {
@@ -338,9 +328,6 @@ def _build_site_project_data_map(
         name = site.get("Name", "")
         if name:
             if name in result:
-                # Keyed by name, so a repeated Name silently replaces
-                # the earlier site and one lamella disappears from the
-                # UI (and from the site-position atlas). Surface it.
                 logger.warning(
                     f"Duplicate site name '{name}' in "
                     f"ProjectData.dat — keeping the later entry; "

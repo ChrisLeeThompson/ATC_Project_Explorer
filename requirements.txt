@@ -19,14 +19,15 @@ numpy>=1.24.0
 # (uses the Qt-Agg backend via matplotlib.backends.backend_qtagg)
 matplotlib>=3.7.0
 
-# --- Recommended Dependencies ---------------------------------
-# These are imported lazily with try/except guards and the
-# application runs without them, but functionality is reduced.
-
-# Image loading fallback when matplotlib's reader fails
+# Image decoding for previews, thumbnails, and image info
+# (matplotlib's reader also relies on it for TIFF/JPEG files)
 Pillow>=10.0.0
 
+# --- Optional Dependencies ------------------------------------
+# Imported lazily with a try/except guard; the application runs
+# without it, but functionality is reduced.
+
 # TIFF metadata extraction (FEI/TFS instrument tags)
-# Required for image overlay graphics and the site position
+# Needed for image overlay graphics and the site position
 # atlas image montage. Without it, TIF metadata is skipped.
 tifffile>=2023.2.0

@@ -1,8 +1,8 @@
 """
 Image Metadata Parser
 
-Module handles extraction of metadata from images in ATC project
-site directories.  Two image types are encountered:
+Extracts metadata from images in ATC project site directories.
+Two image types are encountered:
 
     - **.tif** files from the FEI/ThermoFisher instrument.  These
       contain rich metadata in TIFF tags:
@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # report accurate channel/bit-depth info when dimensions are read via
 # PIL's lazy header open (which, unlike a full matplotlib decode of a
 # PNG, reflects the file's true acquisition bit depth — e.g. "I;16"
-# 16-bit SEM/FIB images report ``uint16`` rather than a normalised
+# 16-bit SEM/FIB images report ``uint16`` rather than a normalized
 # float).
 _PIL_MODE_INFO: dict[str, tuple[int, str]] = {
     "1":     (1, "bool"),
@@ -129,7 +129,8 @@ def extract_image_metadata(image_path: Path) -> dict:
         if tif_meta:
             result.update(tif_meta)
 
-    # Non-TIF: scan raw bytes for embedded FEI XML metadata
+    # Scan raw bytes for embedded FEI XML when the TIFF tags did not
+    # provide it (PNG files, or TIFs missing tag 34683).
     if "XMLMetadata" not in result:
         embedded = _extract_embedded_xml_metadata(image_path)
         if embedded:
@@ -428,7 +429,7 @@ def _detect_actual_format(raw: bytes) -> str | None:
     """Detect the actual image format from magic bytes.
 
     Returns ``"jpeg"``, ``"png"``, ``"tiff"``, or *None* if
-    the format is not recognised.
+    the format is not recognized.
 
     :param raw: Raw file bytes (only the first 8 are inspected).
     :return: Format string or *None*.
@@ -488,7 +489,7 @@ def _parse_xml_metadata(xml_string: str) -> dict | None:
         return result
     except ET.ParseError:
         logger.debug(
-            "XML parsing failed for TIF metadata", exc_info=True
+            "XML metadata parsing failed", exc_info=True
         )
         return None
     except Exception:

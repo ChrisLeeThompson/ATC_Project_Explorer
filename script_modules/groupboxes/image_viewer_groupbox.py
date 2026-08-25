@@ -9,19 +9,19 @@ Layout::
     ├── Left column (fixed width):
     │   ├── ImageDirectoryComboBox (select image directory)
     │   └── Searchable metadata tree (ImageInfo, MicroscopeMetadata,
-    │       XMLMetadata for TIF files; ImageInfo only for PNG)
+    │       and XMLMetadata when the image carries embedded FEI XML)
     └── Right column (expanding):
-        ├── Image name + [Show Graphics] + counter row
+        ├── Image name + [Show graphics] + counter row
         ├── ImageCanvasWidget (QPainter image display + overlay)
         │   └── ResetViewButton floated bottom-right
-        └── Button row: [Previous ←──────── ] [──────────→ Next]
+        └── Button row: [Opacity] [slider] [Previous] [Next] [slider] [Opacity]
 
 The group box is populated with a site's ``ImageDirectories``
 data and requires the project root path to resolve relative image
 paths to absolute paths on disk.
 
-The group box starts in a placeholder state and is populated when
-the user selects a site in the combo box.
+The group box starts in a placeholder state and is populated by the
+parent panel when a site is selected.
 
 View interaction
 ~~~~~~~~~~~~~~~~
@@ -30,12 +30,16 @@ The canvas uses ``QPainter`` rather than matplotlib so that mouse
 zoom and drag pan are the primary view-manipulation gestures (no
 separate toolbar required):
 
-- **Wheel zoom** — cursor-anchored, 1.1× per notch, 0.1× floor.
-  The point under the cursor stays fixed across zoom changes.
+- **Wheel zoom** — cursor-anchored, 1.1× per notch, 0.1×–50×
+  range.  The point under the cursor stays fixed across zoom
+  changes.
 - **Left-drag pan** — ``ClosedHandCursor`` while dragging.
 - **Reset view** — ``ResetViewButton`` floated in the bottom-right
   corner of the canvas, repositioned via an ``eventFilter`` on
   canvas resize (mirrors the pattern viewer's idiom).
+- **Opacity cross-fade** — sliders on either side of the
+  Previous/Next buttons blend the current image with its previous
+  or next neighbor for comparing consecutive acquisitions.
 
 Across Previous/Next navigation the canvas's ``(zoom, pan_x,
 pan_y)`` state is preserved so the user can zoom in once and
@@ -45,7 +49,7 @@ directories explicitly resets the view.
 Graphics Overlay
 ~~~~~~~~~~~~~~~~
 
-When **Show Graphics** is checked the canvas draws:
+When **Show graphics** is checked the canvas draws:
 
 1. A **crosshair** at the ``PatternCenterPositionPx`` from the
    ``MatchInformationCollection`` metadata.
@@ -54,12 +58,12 @@ When **Show Graphics** is checked the canvas draws:
    depends on the activity type:
 
    - *Stress Relief Cuts*: rectangles are positioned relative
-     to the match centre (``PatternCenterPositionPx``).
+     to the match center (``PatternCenterPositionPx``).
    - *All other activities* (Rough Milling, polishing, etc.):
-     rectangles are positioned relative to the image centre.
+     rectangles are positioned relative to the image center.
 
    The ``<Center><X>`` metadata value points to the pattern's
-   anchor point; it is adjusted to the geometric centre using
+   anchor point; it is adjusted to the geometric center using
    the ``AnchorPoint`` field before drawing.  The Y axis is
    negated (physical positive-up → image positive-down).
 
@@ -114,12 +118,10 @@ _ZOOM_MAX = 50.0
 # CCW-positive rotation; image and widget space are Y-down, so the
 # on-screen rotation is the negation of the physical angle (the same
 # Y-flip that negates positions above also reverses rotational sense).
-# This convention is DERIVED, not yet visually confirmed against a
-# real rotated-pattern image — most patterns have zero rotation.  If a
-# validation image shows the outline rotated the wrong way, flip this
-# to +1.0.  ScanRotation is deliberately NOT folded in here; if
-# pattern-only rotation still does not match the acquired image, that
-# is the next factor to consider.
+# The sign is derived from these conventions and has not been
+# validated against a real rotated-pattern image (most patterns have
+# zero rotation); flip to +1.0 if a real image shows the opposite
+# sense.  ScanRotation is deliberately not folded in here.
 _OVERLAY_ROTATION_SIGN = -1.0
 
 
@@ -128,13 +130,11 @@ _OVERLAY_ROTATION_SIGN = -1.0
 # -----------------------------------------------------------------
 
 def _extract_pixel_size_val(val) -> float | None:
-    """Extract a numeric value from a ``PixelSize`` child element.
+    """Extract a numeric ``PixelSize`` value (already in metres).
 
     The XML parser produces either a plain float or a dict like
-    ``{"unit": "m", "_text": "7.8125E-08"}`` when the element
-    has XML attributes.  ``PixelSize`` is always a bare numeric
-    value already expressed in metres, so this delegates to
-    :func:`~script_modules.value_utils.extract_numeric`.
+    ``{"unit": "m", "_text": "7.8125E-08"}`` when the element has
+    XML attributes.
 
     :param val: PixelSize X or Y value from parsed metadata.
     :return: Value in metres, or *None*.
@@ -145,24 +145,24 @@ def _extract_pixel_size_val(val) -> float | None:
 def _adjust_anchor_x(
     anchor_x_m: float, anchor_point: str, width_m: float,
 ) -> float:
-    """Adjust pattern X from anchor point to geometric centre.
+    """Adjust pattern X from anchor point to geometric center.
 
     The metadata ``<Center><X>`` value points to the anchor
     point of the pattern.  This converts to the geometric
-    centre X coordinate for drawing.
+    center X coordinate for drawing.
 
     :param anchor_x_m: X coordinate at the anchor (metres).
     :param anchor_point: ``AnchorPoint`` string from metadata
         (e.g. ``"BottomCenter"``, ``"TopRight"``).
     :param width_m: Pattern width (metres).
-    :return: Geometric centre X in metres.
+    :return: Geometric center X in metres.
     """
     ap = anchor_point.lower()
     if "right" in ap:
         return anchor_x_m - width_m / 2
     elif "left" in ap:
         return anchor_x_m + width_m / 2
-    # Centre-aligned anchors (BottomCenter, TopCenter, etc.)
+    # Center-aligned anchors (BottomCenter, TopCenter, etc.)
     return anchor_x_m
 
 
@@ -219,17 +219,14 @@ def _parse_pattern_rectangles(
             "anchor_point": anchor_point,
         })
 
-    # Surface rotated patterns so their occurrence in real projects is
-    # visible (they are expected to be rare).  Logged once per image
-    # rather than per rectangle.  The outline is now rendered rotated
-    # (see _OVERLAY_ROTATION_SIGN), but the sign is unconfirmed against
-    # a real acquired image — this line flags where to look.
+    # Rotated patterns are expected to be rare; log once per image so
+    # their occurrence in real projects is visible.
     rotated = [r for r in result if abs(r["rotation_deg"]) > 0.01]
     if rotated:
         logger.info(
             "Overlay: %d pattern rectangle(s) have non-zero rotation "
-            "(e.g. %.2f\u00b0); drawn with the assumed screen-rotation "
-            "sign \u2014 verify orientation against the acquired image.",
+            "(e.g. %.2f\u00b0); outlines drawn with the derived "
+            "screen-rotation sign (see _OVERLAY_ROTATION_SIGN).",
             len(rotated), rotated[0]["rotation_deg"],
         )
 
@@ -245,12 +242,12 @@ def _rectangles_to_image_px(
 ) -> list[dict]:
     """Convert parsed pattern rectangles to image-pixel space.
 
-    Applies anchor-to-centre adjustment (X), the physical-to-pixel
+    Applies anchor-to-center adjustment (X), the physical-to-pixel
     conversion, and the Y-axis negation in one pass.  The canvas
     consumes the output directly without needing to know about
     coordinate-system conventions or activity types.
 
-    Each output dict has ``x``, ``y`` (geometric centre in image
+    Each output dict has ``x``, ``y`` (geometric center in image
     pixels), ``w``, ``h`` (size in image pixels), and
     ``rotation_deg`` (carried through unchanged for the canvas to
     apply at draw time).
@@ -259,15 +256,15 @@ def _rectangles_to_image_px(
     :param pixel_size_x_m: Metres per pixel along X.
     :param pixel_size_y_m: Metres per pixel along Y.
     :param origin_x_px: Image-pixel X corresponding to the
-        physical X = 0 reference (image centre for regular
-        milling, match centre for stress relief).
+        physical X = 0 reference (image center for regular
+        milling, match center for stress relief).
     :param origin_y_px: Image-pixel Y corresponding to the
         physical Y = 0 reference.
     :return: Rectangles in image-pixel space.
     """
     out: list[dict] = []
     for rect in rects:
-        # Adjust X from anchor point to geometric centre
+        # Adjust X from anchor point to geometric center
         cx_m = _adjust_anchor_x(
             rect["center_x_m"],
             rect["anchor_point"],
@@ -303,7 +300,7 @@ class ImageCanvasWidget(QWidget):
     """QPainter-based image viewer with wheel zoom and drag pan.
 
     Holds a single ``QPixmap`` and an optional overlay dictionary
-    (with crosshair centre and pre-computed image-pixel
+    (with crosshair center and pre-computed image-pixel
     rectangles).  The display transform is recomputed every
     ``paintEvent`` from the widget size, fit-to-widget scale, and
     user-controlled zoom/pan offsets.
@@ -331,7 +328,7 @@ class ImageCanvasWidget(QWidget):
         self._neighbor_overlay_data: dict | None = None
         self._current_opacity: float = 1.0
 
-        # Zoom / pan / drag state (lifted from PatternCanvasWidget)
+        # Zoom / pan / drag state
         self._zoom: float = 1.0
         self._pan_x: float = 0.0
         self._pan_y: float = 0.0
@@ -386,7 +383,7 @@ class ImageCanvasWidget(QWidget):
         self.update()
 
     def set_error_text(self, text: str | None) -> None:
-        """Display a centred error message instead of an image."""
+        """Display a centered error message instead of an image."""
         self._pixmap = None
         self._overlay_data = None
         self._error_text = text
@@ -428,7 +425,7 @@ class ImageCanvasWidget(QWidget):
     def set_current_opacity(self, value: float) -> None:
         """Set the opacity of the current image and repaint.
 
-        At ``1.0`` the neighbour is fully hidden (behaviour identical
+        At ``1.0`` the neighbour is fully hidden (behavior identical
         to no cross-fade); at ``0.0`` only the neighbour shows.
 
         :param value: Opacity in the range ``[0.0, 1.0]`` (clamped).
@@ -484,18 +481,17 @@ class ImageCanvasWidget(QWidget):
     # -----------------------------------------------------------------
 
     def wheelEvent(self, event) -> None:
-        """Zoom in/out on scroll wheel, centred on the cursor.
+        """Zoom in/out on scroll wheel, centered on the cursor.
 
         Scroll up zooms in, scroll down zooms out.  The zoom is
         applied relative to the cursor position so the point
-        under the cursor stays fixed.  Lifted directly from
-        ``PatternCanvasWidget``.
+        under the cursor stays fixed.
         """
         delta = event.angleDelta().y()
         if delta == 0:
             return
 
-        # Cursor position relative to widget centre
+        # Cursor position relative to widget center
         mouse_x = event.position().x() - self.width() / 2
         mouse_y = event.position().y() - self.height() / 2
 
@@ -564,8 +560,7 @@ class ImageCanvasWidget(QWidget):
         )
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Background fill (matches the matplotlib facecolor that
-        # used to surround the image at low zoom levels).
+        # Background fill behind the image at low zoom levels.
         painter.fillRect(
             self.rect(), QColor(AppStyles.Colors.MAIN_BG)
         )
@@ -581,12 +576,12 @@ class ImageCanvasWidget(QWidget):
             painter.end()
             return
 
-        # Cross-fade: when a neighbour is present and the current image
-        # is not fully opaque, draw the neighbour first (opaque) into the
-        # SAME display rect so a same-size before/after pair is
+        # Cross-fade: when a neighbor is present and the current image
+        # is not fully opaque, draw the neighbor first (opaque) into
+        # the same display rect so a same-size before/after pair is
         # pixel-for-pixel aligned and shares the current zoom/pan, then
         # draw the current image on top at the slider opacity.  When no
-        # neighbour is set or opacity is 1.0 this path is skipped and the
+        # neighbor is set or opacity is 1.0 this path is skipped and the
         # render is identical to a plain single-image draw.
         fade_active = (
             self._neighbor_pixmap is not None
@@ -599,7 +594,7 @@ class ImageCanvasWidget(QWidget):
                 self._neighbor_pixmap,
                 QRectF(self._neighbor_pixmap.rect()),
             )
-            # Neighbour's own graphics fade IN as it is revealed
+            # The neighbor's own graphics fade in as it is revealed
             # (inverse of the current image's opacity), so mid-slide
             # both overlays show at their image's strength.
             if (
@@ -704,8 +699,7 @@ class ImageCanvasWidget(QWidget):
             AppStyles.Colors.IMAGE_VIEWER_CROSSHAIR_COLOR
         )
 
-        # Dashed full-width lines (alpha ~0.7 like the old matplotlib
-        # crosshair)
+        # Dashed full-width lines (alpha ~0.7)
         line_color = QColor(base_color)
         line_color.setAlpha(178)
         line_pen = QPen(line_color, 1.0)
@@ -721,8 +715,8 @@ class ImageCanvasWidget(QWidget):
             QPointF(cx_w, float(self.height())),
         )
 
-        # Centre "+" glyph (alpha ~0.9, slightly heavier than the
-        # cross-widget lines so the focus is visible)
+        # Center "+" glyph (alpha ~0.9, slightly heavier than the
+        # crosshair lines so the focus is visible)
         glyph_color = QColor(base_color)
         glyph_color.setAlpha(229)
         glyph_pen = QPen(glyph_color, 1.5)
@@ -762,7 +756,7 @@ class ImageCanvasWidget(QWidget):
                 continue
             rot = rect.get("rotation_deg") or 0.0
             if abs(rot) > 0.01:
-                # Rotated pattern: rotate about the rectangle centre in
+                # Rotated pattern: rotate about the rectangle center in
                 # widget space.  Widget scaling is uniform
                 # (scale_x == scale_y from the fit transform), so the
                 # rotated outline is not sheared.  Sign convention: see
@@ -779,9 +773,7 @@ class ImageCanvasWidget(QWidget):
                 )
                 painter.restore()
             else:
-                # Axis-aligned (all current data): expression kept
-                # identical to the pre-rotation code so the rendered
-                # output is pixel-for-pixel unchanged.
+                # Axis-aligned (all current data).
                 x0 = disp_rect.left() + (rx - rw / 2) * scale_x
                 y0 = disp_rect.top() + (ry - rh / 2) * scale_y
                 painter.drawRect(
@@ -791,7 +783,7 @@ class ImageCanvasWidget(QWidget):
     def _draw_error_text(
         self, painter: QPainter, text: str,
     ) -> None:
-        """Render a centred placeholder string (e.g. "Image file
+        """Render a centered placeholder string (e.g. "Image file
         not found")."""
         painter.setPen(QColor(AppStyles.Colors.TEXT_DISABLED))
         font = painter.font()
@@ -895,7 +887,7 @@ class ImageViewerGroupBox(QGroupBox):
         site_name = site_data.get("SiteName", "Unknown")
         logger.info(
             f"Image viewer populated for '{site_name}': "
-            f"{len(self._image_directories)} directory/directories"
+            f"{len(self._image_directories)} image directories"
         )
 
     def clear(self) -> None:
@@ -946,11 +938,10 @@ class ImageViewerGroupBox(QGroupBox):
             return
 
         # Only re-resolve when the target directory differs from the
-        # one already loaded.  This avoids a redundant decode of that
-        # directory's first image (and the brief flash it caused when
-        # this used to call _on_directory_selected).  The combo box is
-        # connected via ``activated`` (user action only), so
-        # setCurrentIndex does not fire _on_directory_selected.
+        # one already loaded, avoiding a redundant decode of that
+        # directory's first image.  The combo box is connected via
+        # ``activated`` (user action only), so setCurrentIndex does
+        # not fire _on_directory_selected.
         if dir_index != self._directory_combobox.currentIndex():
             self._directory_combobox.setCurrentIndex(dir_index)
             self._preserved_view = None
@@ -1008,9 +999,9 @@ class ImageViewerGroupBox(QGroupBox):
             | Qt.AlignmentFlag.AlignVCenter
         )
 
-        # Show Graphics checkbox (enabled when overlay data is found)
+        # Show graphics checkbox (enabled when overlay data is found)
         self._show_graphics_checkbox = QCheckBox(
-            "Show Graphics", parent=self
+            "Show graphics", parent=self
         )
         self._show_graphics_checkbox.setStyleSheet(
             AppStyles.CheckBox.default()
@@ -1073,7 +1064,7 @@ class ImageViewerGroupBox(QGroupBox):
         Range 0-100 with 100 (fully opaque current image) as the rest
         position.  ``NoFocus`` mirrors the nav buttons; a fixed width
         keeps the slider from absorbing horizontal slack so the buttons
-        stay centred.
+        stay centered.
         """
         slider = QSlider(Qt.Orientation.Horizontal, parent=self)
         slider.setRange(0, 100)
@@ -1113,7 +1104,7 @@ class ImageViewerGroupBox(QGroupBox):
         # Button row: opacity sliders flank the nav buttons (labels on
         # the outer edges, mirrored; sliders inboard).  Labels/sliders
         # are fixed width (stretch 0) so the two buttons absorb all
-        # horizontal slack and stay centred.
+        # horizontal slack and stay centered.
         button_row = QHBoxLayout()
         button_row.setContentsMargins(0, 0, 0, 0)
         button_row.setSpacing(AppStyles.Dimensions.LAYOUT_VSPACING)
@@ -1305,7 +1296,7 @@ class ImageViewerGroupBox(QGroupBox):
                     "No project directory available"
                 )
             else:
-                self._info_label.setText("No images in directory")
+                self._info_label.setText("No images in this directory")
             self._info_label.setVisible(True)
 
     # -----------------------------------------------------------------
@@ -1638,7 +1629,7 @@ class ImageViewerGroupBox(QGroupBox):
         - ``rectangles_image_px`` *(optional)* — list of
           ``{x, y, w, h}`` dicts in image-pixel space, with anchor
           adjustment, Y-axis negation, and origin selection (image
-          centre vs match centre) all already applied.
+          center vs match center) all already applied.
 
         The pre-computation moves the coordinate-system logic from
         paint time to image-load time, keeping the canvas free of
@@ -1741,8 +1732,8 @@ class ImageViewerGroupBox(QGroupBox):
 
         # -- Pre-compute image-pixel rectangles ----------------------
         # Combines anchor adjustment, physical→pixel scaling, the
-        # Y-axis flip, and origin selection (image centre vs match
-        # centre) so the canvas does not need to know about FEI
+        # Y-axis flip, and origin selection (image center vs match
+        # center) so the canvas does not need to know about FEI
         # coordinate-system conventions.
         rectangles_image_px: list[dict] = []
         if parsed_rects and px_x is not None and px_y is not None:
@@ -1750,11 +1741,11 @@ class ImageViewerGroupBox(QGroupBox):
                 "stress relief" in activity_name.lower()
             )
             if is_stress_relief:
-                # Stress relief: origin = match centre
+                # Stress relief: origin = match center
                 origin_x = center_x
                 origin_y = center_y
             elif image_width is not None and image_height is not None:
-                # Regular milling / polishing: origin = image centre
+                # Regular milling / polishing: origin = image center
                 origin_x = image_width / 2
                 origin_y = image_height / 2
             else:

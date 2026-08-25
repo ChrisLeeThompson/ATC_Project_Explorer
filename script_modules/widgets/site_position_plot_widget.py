@@ -8,18 +8,18 @@ log directory.
 When available, the **first** eucentric-tilt-match-information
 image for each site is placed at its stage position using embedded
 FEI XML metadata (``BinaryResult.PixelSize`` for extent,
-``StageCollection`` for centre coordinates).  A lamella marker
+``StageCollection`` for center coordinates).  A lamella marker
 is drawn at the ``PatternCenterPositionPx`` position when
-present, otherwise at the image centre.
+present, otherwise at the image center.
 
 If the image or its metadata is unavailable the widget falls back
 to stage coordinates from the project's ``ChunkSiteLocation``
 and draws a simple scatter point.
 
 Duplicate images (tiles that cover essentially the same area) are
-detected by comparing stage positions: if two image centres fall
-within a configurable fraction of the field of view, only the
-first is rendered.
+detected by comparing stage positions: if two image centers fall
+within a fixed fraction of the field of view
+(:data:`_DEDUP_FOV_FRACTION`), only the first is rendered.
 
 Site markers are interactive: hovering enlarges the point and
 changes the cursor to a pointing hand; clicking shows a context
@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
 # projects while preserving enough detail for a montage overview.
 _MAX_IMAGE_DIM = 512
 
-# Two image centres closer than this fraction of the average FOV
+# Two image centers closer than this fraction of the average FOV
 # are considered duplicates (same tileset tile).  Only the first
 # encountered image is rendered.
 _DEDUP_FOV_FRACTION = 0.4
@@ -157,40 +157,11 @@ class SitePositionPlotWidget(StyledChartWidget):
                     entry, project_root, preloaded=preloaded
                 )
 
-        # ── Diagnostic: compare coordinate sources ───────────────
-        # Log fallback (ChunkSiteLocation) vs. image metadata
-        # stage positions so coordinate-system mismatches are
-        # easy to spot.
-        for e in entries:
-            name = e["site_name"]
-            fb_x = e["fallback_x_m"]
-            fb_y = e["fallback_y_m"]
-            im_x = e["image_stage_x_m"]
-            im_y = e["image_stage_y_m"]
-            if im_x is not None and im_y is not None:
-                delta_x = (im_x - fb_x) * 1e6
-                delta_y = (im_y - fb_y) * 1e6
-                logger.debug(
-                    f"[{name}] fallback=("
-                    f"{fb_x*1e3:.4f}, {fb_y*1e3:.4f}) mm | "
-                    f"image_stage=("
-                    f"{im_x*1e3:.4f}, {im_y*1e3:.4f}) mm | "
-                    f"delta=({delta_x:.1f}, {delta_y:.1f}) µm"
-                )
-            else:
-                logger.debug(
-                    f"[{name}] fallback=("
-                    f"{fb_x*1e3:.4f}, {fb_y*1e3:.4f}) mm | "
-                    f"image_stage=None (using fallback)"
-                )
-
         # ── 3. Compute display positions and centroid ────────────
         # Use the same position source for both the centroid and
-        # display so they share a consistent coordinate frame.
-        # Previously the centroid was always from fallback, while
-        # display preferred image metadata — when those used
-        # different coordinate systems (e.g. StageSettings vs
-        # StageCollection) images were displaced from markers.
+        # display so they share a consistent coordinate frame;
+        # mixing sources (e.g. StageSettings vs StageCollection)
+        # displaces images from markers.
         display_positions: list[tuple[float, float]] = []
         for e in entries:
             pos_x = (
@@ -300,7 +271,7 @@ class SitePositionPlotWidget(StyledChartWidget):
         ``preview_media_loader``), its ``atlas_array`` / ``atlas_meta``
         are consumed directly — no image is decoded on the GUI thread.
         Otherwise the image is found, decoded, and its metadata
-        extracted on demand (the original behaviour).  Either way the
+        extracted on demand.  Either way the
         cheap coordinate math is applied via
         :meth:`_apply_image_placement`.
 
@@ -357,7 +328,7 @@ class SitePositionPlotWidget(StyledChartWidget):
         and its ``XMLMetadata`` (pure computation; no I/O).
 
         Extracts pixel size, field of view, stage position, and
-        pattern centre.  When metadata is missing the image is still
+        pattern center.  When metadata is missing the image is still
         stored (the site falls back to its ChunkSiteLocation
         position).
 
@@ -384,14 +355,13 @@ class SitePositionPlotWidget(StyledChartWidget):
             return
 
         px_x, px_y = pixel_size
-        # Use the ORIGINAL image dimensions from metadata for
-        # FOV, not the downsampled array dimensions.  The image
-        # array is downsampled for display (max_dim=512) but the
-        # field of view must reflect the full acquisition size.
+        # Use the original image dimensions from metadata for the
+        # FOV, not the downsampled array dimensions: the array is
+        # downsampled for display, but the field of view must
+        # reflect the full acquisition size.
         orig_w, orig_h = self._extract_image_size(xml_meta)
         if orig_w is None:
-            # Fall back to downsampled dimensions (incorrect but
-            # better than nothing)
+            # Fall back to the downsampled dimensions (approximate).
             img_h, img_w = image_array.shape[:2]
             orig_w = img_w
             orig_h = img_h
@@ -419,13 +389,13 @@ class SitePositionPlotWidget(StyledChartWidget):
                 f"'{name}', will use ChunkSiteLocation"
             )
 
-        # Extract pattern centre (in image pixel coordinates),
+        # Extract pattern center (in image pixel coordinates),
         # convert to stage-relative offset in µm.
-        # Pattern centre coordinates are in ORIGINAL pixel space,
+        # Pattern center coordinates are in original pixel space,
         # so use orig_w / orig_h (not the downsampled dimensions).
         pattern_px = self._extract_pattern_center(xml_meta)
         if pattern_px is not None and pixel_size is not None:
-            # Pattern centre offset from image centre, in µm
+            # Pattern center offset from image center, in µm
             cx_px, cy_px = pattern_px
             offset_x_m = (cx_px - orig_w / 2) * px_x
             offset_y_m = (cy_px - orig_h / 2) * px_y
@@ -456,7 +426,7 @@ class SitePositionPlotWidget(StyledChartWidget):
         The FEI XML schema stores pixel size with XML attributes
         (``unit``, ``unitPrefixPower``), causing the parser to
         produce a dict like
-        ``{"unit": "m", "_text": "6.48...E-07"}`` rather than
+        ``{"unit": "m", "_text": "6.48E-07"}`` rather than
         a plain numeric value.  Uses :func:`extract_numeric` to
         handle both forms.
 
@@ -479,7 +449,7 @@ class SitePositionPlotWidget(StyledChartWidget):
     @staticmethod
     def _extract_image_size(
         xml_meta: dict,
-    ) -> tuple[int, int]:
+    ) -> tuple[int | None, int | None]:
         """Extract the original image dimensions from
         ``XMLMetadata.BinaryResult.ImageSize``.
 
@@ -581,7 +551,7 @@ class SitePositionPlotWidget(StyledChartWidget):
     def _extract_pattern_center(
         xml_meta: dict,
     ) -> tuple[float, float] | None:
-        """Extract the pattern centre pixel coordinates from the
+        """Extract the pattern center pixel coordinates from the
         image's XMLMetadata.
 
         Primary path (via scope-grouped custom sections)::
@@ -695,16 +665,12 @@ class SitePositionPlotWidget(StyledChartWidget):
         """Warn when multiple sites resolve to identical coordinates.
 
         Sites sharing an identical source position render as stacked
-        markers — visually indistinguishable from a single site.
-        This is genuine in ATC data when several lamella sites are
-        prepared from the same chunk and no per-site image stage
-        position is available to separate them.  The warning names
-        the sites and the coordinate source each used so overlap
-        seen in the plot can be traced to the data immediately.
+        markers.  The warning names the sites and the coordinate
+        source each used so overlap seen in the plot can be traced
+        to the data.
 
-        Grouping uses exact float equality deliberately: identical
-        source strings parse to identical floats, so an exact match
-        means the *data* is shared, while merely-close positions
+        Grouping uses exact float equality deliberately: an exact
+        match means the data is shared, while merely-close positions
         (a rendering concern) stay out of this report.
 
         :param entries: Site entry dicts (parallel to positions).
@@ -742,10 +708,10 @@ class SitePositionPlotWidget(StyledChartWidget):
 
     def _deduplicate_images(self, entries: list[dict]) -> None:
         """Mark images for placement, skipping duplicates whose
-        centres overlap significantly.
+        centers overlap significantly.
 
         Iterates entries in order.  An image is placed unless its
-        centre (in metres) is within ``_DEDUP_FOV_FRACTION`` of
+        center (in metres) is within ``_DEDUP_FOV_FRACTION`` of
         the average FOV of an already-placed image.
 
         Modifies entries in place (sets ``"place_image"``).
@@ -912,8 +878,8 @@ class SitePositionPlotWidget(StyledChartWidget):
         fov_y = entry.get("fov_y_m")
 
         if fov_x is None or fov_y is None:
-            # No pixel size: render at a nominal extent around the
-            # marker position (1/4 of the total coordinate range)
+            # No pixel size: render at a nominal 50 µm extent
+            # around the marker position.
             fov_x_um = 50.0
             fov_y_um = 50.0
         else:
@@ -931,7 +897,7 @@ class SitePositionPlotWidget(StyledChartWidget):
             cy + half_y,
         ]
 
-        # Use gray colourmap for grayscale (2D) images
+        # Use gray colormap for grayscale (2D) images
         cmap = "gray" if img.ndim == 2 else None
 
         self.ax.imshow(
@@ -949,8 +915,8 @@ class SitePositionPlotWidget(StyledChartWidget):
     def _marker_position(entry: dict) -> tuple[float, float]:
         """Determine the lamella marker position in display µm.
 
-        Uses the pattern centre offset when available, otherwise
-        the image/fallback centre.
+        Uses the pattern center offset when available, otherwise
+        the image/fallback center.
 
         :param entry: Site entry dict.
         :return: ``(x_µm, y_µm)`` in display coordinates.
@@ -1059,7 +1025,7 @@ class SitePositionPlotWidget(StyledChartWidget):
 
         go_to_action = menu.addAction(f"Open {site_name}")
         open_new_action = menu.addAction(
-            f"Open {site_name} in new window"
+            f"Open {site_name} in New Window"
         )
 
         chosen = menu.exec(QCursor.pos())
@@ -1092,12 +1058,12 @@ class SitePositionPlotWidget(StyledChartWidget):
     ) -> int | None:
         """Find the index of the site marker closest to the cursor.
 
-        Coordinates are normalised to axes range so the threshold
+        Coordinates are normalized to axes range so the threshold
         works consistently regardless of zoom level.
 
         :param x: Cursor x in data coordinates (µm).
         :param y: Cursor y in data coordinates (µm).
-        :param threshold: Maximum normalised distance to match.
+        :param threshold: Maximum normalized distance to match.
         :return: Index into ``_site_points``, or *None*.
         """
         xlim = self.ax.get_xlim()

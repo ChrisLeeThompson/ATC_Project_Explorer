@@ -5,11 +5,9 @@ Off-GUI-thread loader for the media the global panel needs after a
 project loads: the two preview thumbnails per site plus the
 representative atlas image and its metadata.
 
-Running this on the worker thread means the decode cost — up to three
-image decodes per site, which is the multi-second freeze on large
-projects over network storage — happens under the progress bar
-instead of locking the UI after the bar completes.  Everything it
-produces is a thread-safe payload:
+Decoding happens on the worker thread, under the progress bar, so
+the UI stays responsive.  Everything produced is a thread-safe
+payload:
 
   - Preview thumbnails are decoded to ``QImage`` (which, unlike
     ``QPixmap``, may be built off the GUI thread); the panels convert
@@ -19,8 +17,7 @@ produces is a thread-safe payload:
 The result is a mapping ``{site_name: {...}}`` returned in the
 worker's result dict and forwarded to the panels via
 ``set_preloaded_media``.  When a site — or the whole bundle — is
-absent, the panels fall back to their existing on-demand loading, so
-this is a pure optimisation layered on top of the synchronous path.
+absent, the panels fall back to their on-demand loading.
 """
 import logging
 from pathlib import Path
@@ -60,9 +57,8 @@ def load_project_media(
     :param project_root: Absolute path to the project root, used to
         resolve relative image paths.
     :param cancel_check: Optional ``Callable[[], bool]`` polled once
-        per site (before its images are decoded); when it returns
-        True, loading stops by raising :class:`OperationCancelled`,
-        bounding cancellation latency to roughly one site's decode.
+        per site; when it returns True, :class:`OperationCancelled`
+        is raised (see :mod:`script_modules.cancellation`).
     :param progress: Optional ``Callable[[int, int], None]`` invoked
         as ``(done, total)`` after each site, for progress reporting.
     :return: Mapping ``{site_name: {"left_qimage", "left_tooltip",
@@ -88,7 +84,6 @@ def load_project_media(
 
         directories = site_data.get("ImageDirectories", [])
 
-        # Preview thumbnails (electron + polishing)
         left_path, _ = find_left_image(directories, project_root)
         right_path, _ = find_right_image(directories, project_root)
         left_qimage = (
@@ -100,7 +95,6 @@ def load_project_media(
             if right_path is not None else None
         )
 
-        # Atlas image array + XMLMetadata
         atlas_array, atlas_meta = _load_atlas_data(
             directories, project_root
         )
@@ -148,7 +142,7 @@ def _load_atlas_data(directories, project_root):
             f"{image_path.name}",
             exc_info=True,
         )
-        # Image decoded but metadata unreadable — matches the atlas's
-        # on-demand behaviour of skipping the image in this case.
+        # Image decoded but metadata unreadable — skip both, matching
+        # the atlas's on-demand loading.
         return None, None
     return image_array, meta.get("XMLMetadata", {})

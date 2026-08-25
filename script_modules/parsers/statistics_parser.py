@@ -109,7 +109,6 @@ class StatisticsParser:
             total_seconds = _parse_duration_or_none(duration_str) or 0
             duration_formatted = format_seconds(total_seconds)
 
-            # Track insertion order
             if lamella_name not in lamella_activities:
                 lamella_order.append(lamella_name)
                 lamella_activities[lamella_name] = []
@@ -120,7 +119,6 @@ class StatisticsParser:
                 "TotalSeconds": total_seconds,
             })
 
-        # Build output, preserving the order lamellae appear in the file
         result = {"Lamellae": []}
 
         for lamella_name in lamella_order:
@@ -132,7 +130,6 @@ class StatisticsParser:
             )
             without_placement = total_seconds - placement_seconds
 
-            # Build clean activity list (without internal TotalSeconds)
             activities_clean = [
                 {
                     "ActivityName": a["ActivityName"],

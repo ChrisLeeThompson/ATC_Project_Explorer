@@ -1,23 +1,10 @@
 """
 Site Panel
 
-Composite panel for displaying site-specific (per-lamella) data.
-
-The module includes:
-- Scrollable QWidget
-- Groupboxes:
-    - SiteStatsGroupBox: Displays site-specific statistics
-    - SitePreviewGroupBox: Side-by-side preview of the
-      electron evaluation and last polishing images
-    - PatternViewerGroupBox: Three-column pattern viewer with
-      info panel, schematic canvas, and activity toggle buttons
-    - SiteParametersGroupBox: Displays site parameters and
-      per-recipe workflow data in searchable tree views
-    - ImageViewerGroupBox: Two-column image browser with
-      directory selection and Previous/Next navigation
-- Widgets:
-    - SiteActivityBarChartWidget: Horizontal bar chart of
-      per-activity durations
+Composite panel for displaying site-specific (per-lamella) data:
+site statistics, the two preview images, the per-activity duration
+chart, the pattern viewer, the image browser, and the site
+parameter trees, all inside a vertical scroll area.
 """
 import logging
 from pathlib import Path
@@ -45,11 +32,8 @@ class SitePanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # Create child widgets
         self._create_widgets()
-        # Setup layout
         self._setup_layout()
-        # Wire inter-widget signals
         self._connect_signals()
 
     # -----------------------------------------------------------------
@@ -123,7 +107,6 @@ class SitePanel(QWidget):
             QSizePolicy.Policy.Fixed,
         )
 
-        # Content widget that lives inside the scroll area
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -135,7 +118,6 @@ class SitePanel(QWidget):
         content_layout.addWidget(self.site_parameters_groupbox, 1)
         content_layout.addStretch(1)
 
-        # Scroll area wrapping the content widget
         self._scroll_area = QScrollArea()
         self._scroll_area.setWidget(content_widget)
         self._scroll_area.setWidgetResizable(True)
@@ -149,7 +131,6 @@ class SitePanel(QWidget):
             AppStyles.ScrollArea.default()
         )
 
-        # Panel-level layout: just the scroll area
         panel_layout = QVBoxLayout(self)
         panel_layout.setContentsMargins(0, 0, 0, 0)
         panel_layout.setSpacing(0)
@@ -177,11 +158,9 @@ class SitePanel(QWidget):
             (e.g. ``"LamellaEvaluationImages"``).
         :param filename: Image file name to navigate to.
         """
-        # Scroll the image viewer into view
         self._scroll_area.ensureWidgetVisible(
             self.image_viewer_groupbox, 0, 50
         )
-        # Select the directory and image
         self.image_viewer_groupbox.select_image(
             directory_name, filename
         )

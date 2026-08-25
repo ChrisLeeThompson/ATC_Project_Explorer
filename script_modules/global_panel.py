@@ -1,19 +1,10 @@
 """
 Global Panel
 
-Composite panel for displaying global (project-wide) data.
-
-The module includes:
-- Scrollable QWidget
-- Groupboxes:
-    - GlobalStatsGroupBox: Displays global project statistics
-    - GlobalSitePreviewGroupBox: Horizontally scrollable strip
-      of compact site-preview cards
-- Widgets:
-    - DurationBarChartWidget: Horizontal stacked bar chart of
-      per-site milling durations
-    - SitePositionPlotWidget: Spatial atlas of lamella site
-      positions with optional SEM image montage
+Composite panel for displaying global (project-wide) data: the
+global statistics, a horizontally scrollable strip of site-preview
+cards, the per-site process-duration bar chart, and the
+site-position atlas, all inside a vertical scroll area.
 """
 import logging
 from pathlib import Path
@@ -36,9 +27,9 @@ logger = logging.getLogger(__name__)
 
 class GlobalPanel(QWidget):
 
-    # Re-exposed from SitePositionPlotWidget and
-    # GlobalSitePreviewGroupBox so the main module can connect
-    # without reaching into child widgets.
+    # Re-exposed from the child widgets (atlas, duration chart,
+    # preview cards) so the main module can connect without
+    # reaching into them.
     site_selected = Signal(str)
     site_open_new_window = Signal(str)
 
@@ -47,17 +38,12 @@ class GlobalPanel(QWidget):
         # Last-populated metadata, kept so the Global Statistics can
         # be recomputed when the site selection changes.
         self._metadata: dict | None = None
-        # Canonical selected-site set, keyed by SiteName over the
-        # full metadata["Sites"] list. The panel is the single
-        # writer; children only render it and report user intent.
-        # (Duplicate SiteNames collapse to one entry — the same
-        # limitation as the name-keyed site_selected signals.)
+        # Canonical selected-site set, keyed by SiteName. The panel
+        # is the single writer; children render it and report user
+        # intent. Duplicate SiteNames collapse to one entry.
         self._selected_site_names: set[str] = set()
-        # Create child widgets
         self._create_widgets()
-        # Setup layout
         self._setup_layout()
-        # Connect child signals
         self._connect_signals()
 
     # -----------------------------------------------------------------
@@ -143,9 +129,7 @@ class GlobalPanel(QWidget):
         self.global_site_preview_groupbox.site_selected.connect(
             self.site_selected
         )
-        # Site selection driving the Global Statistics: the chart's
-        # row checkboxes and master checkbox report user intent;
-        # this panel is the single writer of the canonical selection.
+        # The chart's checkboxes drive the Global Statistics selection.
         self.duration_bar_chart.site_check_toggled.connect(
             self._on_site_check_toggled
         )
@@ -177,8 +161,8 @@ class GlobalPanel(QWidget):
             self._selected_site_names.add(site_name)
         else:
             self._selected_site_names.discard(site_name)
-        # Push the set back so duplicate-named rows stay coherent;
-        # set_site_selection never emits, so this cannot loop.
+        # Push the set back so duplicate-named rows stay coherent
+        # (set_site_selection never emits).
         self.duration_bar_chart.set_site_selection(
             self._selected_site_names
         )
@@ -228,7 +212,6 @@ class GlobalPanel(QWidget):
             QSizePolicy.Policy.Fixed,
         )
 
-        # Content widget that lives inside the scroll area
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
         content_layout.setContentsMargins(0, 0, 0, 0)
@@ -238,7 +221,6 @@ class GlobalPanel(QWidget):
         content_layout.addWidget(self.site_position_plot)
         content_layout.addStretch(1)
 
-        # Scroll area wrapping the content widget
         self._scroll_area = QScrollArea()
         self._scroll_area.setWidget(content_widget)
         self._scroll_area.setWidgetResizable(True)
@@ -252,7 +234,6 @@ class GlobalPanel(QWidget):
             AppStyles.ScrollArea.default()
         )
 
-        # Panel-level layout: just the scroll area
         panel_layout = QVBoxLayout(self)
         panel_layout.setContentsMargins(0, 0, 0, 0)
         panel_layout.setSpacing(0)

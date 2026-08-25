@@ -8,11 +8,11 @@ Layout::
 
     PatternViewerGroupBox (titled "Pattern Viewer")
     ├── Left column (fixed width):
-    │   └── QGridLayout with QLabels:
-    │       Activity Name, Pattern Type, Width, Height, Depth,
-    │       Depth Correction, Overlap %, Beam Current,
-    │       Measured Beam Current, Duration
-    ├── Centre column (expanding):
+    │   └── QGridLayout with QLabels: Activity, Pattern type,
+    │       Width, Height, Depth, the four front/rear overlaps,
+    │       Pattern offset, Overlap, Overtilt, Depth correction,
+    │       Beam current, Measured current, DCM interval, Duration
+    ├── Center column (expanding):
     │   └── PatternCanvasWidget — custom QWidget with QPainter
     │       schematic showing the lamella and pattern rectangles
     └── Right column (fixed width):
@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
 _PLACEHOLDER_LABEL = "No pattern data available"
 _NA = "N/A"
 
-# Workflow step → colour mapping for the canvas
+# Workflow step → color mapping for the canvas
 _STEP_COLORS: dict[str, str] = {
     "Preparation": AppStyles.Colors.PLOT_PREPARATION_BAR_COLOR,
     "Milling": AppStyles.Colors.PLOT_MILLING_BAR_COLOR,
@@ -241,9 +241,8 @@ def _rect_with_um(
     strings.  When an override is *None* the value is derived from the
     rect's own raw string field via
     :func:`~script_modules.value_utils.to_micrometres` (0.0 if the
-    field is absent or unparseable — the same guard the canvas used
-    previously).  A new dict is returned so the underlying PatternData
-    rectangle is never mutated.
+    field is absent or unparseable).  A new dict is returned so the
+    underlying PatternData rectangle is never mutated.
 
     :param rect: A single rectangle dict from ``PatternData``.
     :param width_um: Optional pre-computed width in µm (e.g. a
@@ -288,7 +287,7 @@ def _build_display_entries(site_data: dict) -> list[dict]:
     final_thickness = _format_value(params.get("FinalThickness"))
 
     # Numeric lamella width (µm) for recipe-derived per-side
-    # pattern widths.  ATC guarantees a non-zero LamellaWidth.
+    # pattern widths.
     lamella_width_um = PatternCanvasWidget._parse_um(
         str(params.get("LamellaWidth", "0"))
     )
@@ -308,7 +307,7 @@ def _build_display_entries(site_data: dict) -> list[dict]:
             site_pd, base_name
         )
 
-        # Workflow step for colour assignment
+        # Workflow step for color assignment
         workflow_step = step_map.get(base_name, "")
         color = _STEP_COLORS.get(
             workflow_step, _DEFAULT_PATTERN_COLOR
@@ -461,9 +460,7 @@ def _build_display_entries(site_data: dict) -> list[dict]:
             "dcm_interval": dcm_interval,
             "duration": duration,
             # Canvas-facing rectangles carry numeric width_um/height_um
-            # (derived from the raw rect strings) so drawing does not
-            # re-parse display text.  New dicts are built so the
-            # underlying PatternData rects are never mutated.
+            # so drawing does not re-parse display text.
             "rectangles": [_rect_with_um(r) for r in rects],
             "lamella_width": lamella_width,
             "final_thickness": final_thickness,
@@ -485,10 +482,6 @@ def _build_display_entries(site_data: dict) -> list[dict]:
             front_entry["rear_left_overlap_um"] = 0.0
             front_entry["rear_right_overlap_um"] = 0.0
             # Per-side width: pattern = lamella + front_left + front_right.
-            # Override the info-panel `width` and the per-rectangle
-            # numeric width_um so canvas drawing reflects the front
-            # overlaps.  The display string is derived directly from the
-            # numeric (no float -> str -> parse round-trip).
             front_w_um = lamella_width_um + flo_um + fro_um
             front_entry["width"] = f"{round(front_w_um, 2)} µm"
             if front_height_raw is not None:
@@ -681,9 +674,8 @@ class PatternCanvasWidget(QWidget):
             and self._entries[-1].get("is_lamella")
             else -1
         )
-        # Stale hit-map from previous data must not match clicks
-        # against the new entries; cleared as cheap insurance even
-        # though paintEvent rebuilds it on the next paint.
+        # Clear the stale hit-map so old rects cannot match clicks
+        # before the next paint rebuilds it.
         self._hit_map.clear()
         self.reset_view()
         self.update()
@@ -715,7 +707,7 @@ class PatternCanvasWidget(QWidget):
         self._pan_y = 0.0
 
     def wheelEvent(self, event) -> None:
-        """Zoom in/out on scroll wheel, centred on the cursor.
+        """Zoom in/out on scroll wheel, centered on the cursor.
 
         Scroll up zooms in, scroll down zooms out.  The zoom is
         applied relative to the cursor position so the point
@@ -726,7 +718,7 @@ class PatternCanvasWidget(QWidget):
         if delta == 0:
             return
 
-        # Cursor position relative to widget centre
+        # Cursor position relative to widget center
         mouse_x = event.position().x() - self.width() / 2
         mouse_y = event.position().y() - self.height() / 2
 
@@ -763,10 +755,9 @@ class PatternCanvasWidget(QWidget):
             self._drag_start_y = event.position().y()
             self._drag_start_pan_x = self._pan_x
             self._drag_start_pan_y = self._pan_y
-            # Defensive reset: if mouseReleaseEvent was missed (alt-
-            # tab during a previous drag, focus loss, etc.) a stale
-            # True would cause this press to skip the threshold
-            # check and immediately pan instead of click.
+            # Defensive reset: a missed mouseReleaseEvent (focus loss
+            # mid-drag) would leave a stale True and make this press
+            # pan immediately instead of click.
             self._drag_active = False
         super().mousePressEvent(event)
 
@@ -899,7 +890,7 @@ class PatternCanvasWidget(QWidget):
         # Apply user zoom
         scale *= self._zoom
 
-        # Centre of the widget, offset by user pan
+        # Center of the widget, offset by user pan
         cx = self.width() / 2 + self._pan_x
         cy = self.height() / 2 + self._pan_y
 
@@ -985,7 +976,7 @@ class PatternCanvasWidget(QWidget):
         cx: float, cy: float, scale: float,
         is_selected: bool = False,
     ) -> None:
-        """Draw the lamella rectangle at the centre.
+        """Draw the lamella rectangle at the center.
 
         Also records the drawn rect in ``_hit_map`` so the lamella
         can be selected by clicking on it.  Hit rect equals drawn
@@ -1043,7 +1034,7 @@ class PatternCanvasWidget(QWidget):
         else:
             label = f"{nice_um * 1000:g} nm"
 
-        # Anchor: bottom-left.  y is the centreline of the bar.
+        # Anchor: bottom-left.  y is the centerline of the bar.
         margin = AppStyles.Dimensions.SCALE_BAR_MARGIN
         x0 = margin
         x1 = margin + bar_px
@@ -1068,7 +1059,7 @@ class PatternCanvasWidget(QWidget):
             int(x1), int(y + cap_half),
         )
 
-        # Label, centred above the bar.  Set the font size from
+        # Label, centered above the bar.  Set the font size from
         # AppStyles before measuring so horizontalAdvance() reflects
         # the actual rendered width.  This is the last drawing in
         # paintEvent, so we don't restore the painter's prior font.
@@ -1226,8 +1217,8 @@ class PatternCanvasWidget(QWidget):
         within a pattern rectangle to indicate the overlap zones.
 
         :param painter: Active QPainter.
-        :param color: Pattern colour for the lines.
-        :param cx: Centre X of the drawing area (pixels).
+        :param color: Pattern color for the lines.
+        :param cx: Center X of the drawing area (pixels).
         :param lamella_half_w_px: Half lamella width in pixels.
         :param rect_y: Top Y of the pattern rectangle (pixels).
         :param rect_h: Height of the pattern rectangle (pixels).
@@ -1266,7 +1257,7 @@ class PatternCanvasWidget(QWidget):
         lamella).
 
         The inner edge of each rectangle is positioned at
-        ``lamella_width / 2 + TrenchOffset`` from the centre.
+        ``lamella_width / 2 + TrenchOffset`` from the center.
 
         Each drawn rectangle is recorded in ``_hit_map`` for
         click-to-select hit testing.  Both the left and right
@@ -1289,7 +1280,7 @@ class PatternCanvasWidget(QWidget):
             w_px = w_um * scale
             h_px = h_um * scale
 
-            # Distance from centre to inner edge of rectangle
+            # Distance from center to inner edge of rectangle
             inner_edge_um = lamella_half_w + trench_offset_um
             inner_edge_px = inner_edge_um * scale
 
@@ -1318,15 +1309,9 @@ class PatternCanvasWidget(QWidget):
 
     @staticmethod
     def _parse_um(raw) -> float:
-        """Parse a value string to µm.
-
-        Thin delegate to
-        :func:`~script_modules.value_utils.to_micrometres`, retained
-        so the many existing ``PatternCanvasWidget._parse_um`` /
-        ``self._parse_um`` call sites keep working unchanged.
-
-        Handles ``"17 µm"``, ``"398 nm"``, ``"1.5 μm"``, ``"0 m"``,
-        etc.  Returns 0.0 on failure.
+        """Parse a value string to µm via
+        :func:`~script_modules.value_utils.to_micrometres`.
+        Returns 0.0 on failure.
         """
         return to_micrometres(raw)
 
@@ -1452,7 +1437,7 @@ class PatternViewerGroupBox(QGroupBox):
             ("depth_correction", "Depth correction"),
             ("configured_beam_current", "Beam current"),
             ("measured_beam_current", "Measured current"),
-            ("dcm_interval", "DCM"),
+            ("dcm_interval", "DCM interval"),
             ("duration", "Duration"),
         ]
 
@@ -1468,7 +1453,7 @@ class PatternViewerGroupBox(QGroupBox):
 
         info_layout.setRowStretch(len(fields), 1)
 
-        # -- Centre column: canvas --
+        # -- Center column: canvas --
         self._canvas = PatternCanvasWidget(parent=self)
         self._canvas.entry_clicked.connect(
             self._on_canvas_entry_clicked
@@ -1518,7 +1503,7 @@ class PatternViewerGroupBox(QGroupBox):
         """Arrange widgets in a three-column layout.
 
         A horizontal ``QSplitter`` separates the left info panel
-        from the centre+right area, allowing the user to drag the
+        from the center+right area, allowing the user to drag the
         boundary to expand or contract the info panel.
         """
         # Left column
@@ -1544,7 +1529,7 @@ class PatternViewerGroupBox(QGroupBox):
             AppStyles.Dimensions.PATTERN_VIEWER_RIGHT_COLUMN_WIDTH
         )
 
-        # Centre column: canvas (reset button overlaid as child)
+        # Center column: canvas (reset button overlaid as child)
         centre_column = QVBoxLayout()
         centre_column.setContentsMargins(0, 0, 0, 0)
         centre_column.setSpacing(0)
@@ -1553,7 +1538,7 @@ class PatternViewerGroupBox(QGroupBox):
         centre_container = QWidget()
         centre_container.setLayout(centre_column)
 
-        # Centre + right in a regular layout
+        # Center + right in a regular layout
         centre_right_layout = QHBoxLayout()
         centre_right_layout.setContentsMargins(0, 0, 0, 0)
         centre_right_layout.setSpacing(
@@ -1565,7 +1550,7 @@ class PatternViewerGroupBox(QGroupBox):
         centre_right_container = QWidget()
         centre_right_container.setLayout(centre_right_layout)
 
-        # Splitter: left info panel | centre+right area
+        # Splitter: left info panel | center+right area
         self._splitter = QSplitter(
             Qt.Orientation.Horizontal, parent=self
         )

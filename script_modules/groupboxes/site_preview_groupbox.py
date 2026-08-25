@@ -30,9 +30,8 @@ Image selection logic:
   ``"Polishing"`` but not ``"electron"`` (case-insensitive),
   corresponding to the ion beam polishing image.
 
-Both images are displayed as lightweight QPixmap thumbnails
-with no matplotlib overhead.  File names are shown as
-tooltips on hover.  A centred "Image not available"
+Both images are displayed as QPixmap thumbnails.  File names
+are shown as tooltips on hover.  A centered "Image not available"
 placeholder is shown when the target image cannot be found
 or loaded.
 
@@ -95,7 +94,7 @@ class _ClickablePreviewFrame(QFrame):
         self._apply_border(False)
 
     def set_clickable(self, clickable: bool) -> None:
-        """Enable or disable the hover and click behaviour.
+        """Enable or disable the hover and click behavior.
 
         :param clickable: True when a valid image is displayed.
         """
@@ -164,7 +163,6 @@ class SitePreviewGroupBox(QGroupBox):
         super().__init__(parent)
         self.setTitle("Site Preview")
 
-        # State
         self._project_root: Path | None = None
 
         # Track the source directory and filename for each side
@@ -206,7 +204,6 @@ class SitePreviewGroupBox(QGroupBox):
             directories, self._project_root
         )
 
-        # Store source info for click-to-navigate
         self._left_dir_name = left_dir
         self._left_filename = left_path.name if left_path else ""
         self._right_dir_name = right_dir
@@ -219,7 +216,6 @@ class SitePreviewGroupBox(QGroupBox):
             f"left='{left_name}', right='{right_name}'"
         )
 
-        # Load and display
         left_pixmap = (
             load_preview_pixmap(left_path)
             if left_path is not None else None
@@ -238,7 +234,6 @@ class SitePreviewGroupBox(QGroupBox):
             tooltip=right_path.name if right_path else "",
         )
 
-        # Enable click interaction when an image is loaded
         self._left_frame.set_clickable(left_path is not None)
         self._right_frame.set_clickable(right_path is not None)
 
@@ -264,7 +259,7 @@ class SitePreviewGroupBox(QGroupBox):
         self._right_label = PreviewLabel(parent=self)
 
         # Wrap each label in a clickable frame for hover
-        # border and click-to-navigate behaviour.
+        # border and click-to-navigate behavior.
         self._left_frame = _ClickablePreviewFrame(
             self._left_label, parent=self
         )

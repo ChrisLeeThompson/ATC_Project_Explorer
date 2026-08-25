@@ -1,11 +1,11 @@
 """
 Directory / File Drop Widget
 
-Modules handles the directory / file drop widget. The widget is a QLabel.
-The QLabel supports drag and drop of ATC project directories and consolidated metadata JSON files.
+A QLabel drop target that accepts ATC project directories and
+consolidated metadata JSON files.
 
 Directory drops are validated against a list of required files.
-JSON file drops are accepted by extension (.json) during drag, 
+JSON file drops are accepted by extension (.json) during drag,
 with format validation handled by the receiving signal handler.
 """
 from pathlib import Path
@@ -29,7 +29,7 @@ class DirFileDropLabel(QLabel):
     # Signal emitted when validation fails.
     validation_failed_signal: Signal = Signal(str)
 
-    def __init__(self, color_path, grayscale_path, scale_factor=1.8, 
+    def __init__(self, color_path, grayscale_path, scale_factor=1.8,
                  validation_files: list[str] = None, parent=None):
         super().__init__(parent)
         self.scale_factor: float = scale_factor
@@ -37,19 +37,17 @@ class DirFileDropLabel(QLabel):
         self.setAcceptDrops(True)
         self.color_path = Path(color_path)
         self.grayscale_path = Path(grayscale_path)
-        
-        # Set default pixmap (grayscale)
+
         self.pix = QPixmap(str(self.grayscale_path))
         self.setPixmap(self.pix)
-        
-        # Set default label size based on pixmap size
+
         self.setScaledContents(True)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         widget_width = int(self.pix.width() / self.scale_factor)
         widget_height = int(self.pix.height() / self.scale_factor)
         self.setFixedSize(widget_width, widget_height)
         self.setMargin(2)
-    
+
     def set_image_grayscale(self):
         """Set the image drop zone to grayscale (default/inactive state)."""
         self.pix = QPixmap(str(self.grayscale_path))
@@ -61,12 +59,9 @@ class DirFileDropLabel(QLabel):
         self.setPixmap(self.pix)
 
     def set_accepts_drops(self, state: bool):
-        """
-        Method sets accepts drops.
-        :param state: True or False
-        """
+        """Enable or disable drop acceptance."""
         self.setAcceptDrops(state)
-    
+
     def dragEnterEvent(self, event: QDragEnterEvent):
         """
         Handle drag enter events. Accept the drag if it contains:
@@ -78,7 +73,6 @@ class DirFileDropLabel(QLabel):
             for url in urls:
                 if url.isLocalFile():
                     path = Path(url.toLocalFile())
-                    # Check for valid directory
                     if path.is_dir():
                         is_valid, missing_files = validate_atc_directory(
                             path, self.validation_files
@@ -93,7 +87,6 @@ class DirFileDropLabel(QLabel):
                                 f"Invalid ATC project directory. "
                                 f"Missing required files: {missing_names}"
                             )
-                    # Check for JSON file
                     elif path.is_file() and path.suffix.lower() == ".json":
                         event.acceptProposedAction()
                         self.set_image_color()
@@ -119,7 +112,6 @@ class DirFileDropLabel(QLabel):
             for url in urls:
                 if url.isLocalFile():
                     path = Path(url.toLocalFile())
-                    # Handle directory drop
                     if path.is_dir():
                         is_valid, missing_files = validate_atc_directory(
                             path, self.validation_files
@@ -134,7 +126,6 @@ class DirFileDropLabel(QLabel):
                                 f"Invalid ATC project directory. "
                                 f"Missing required files: {missing_names}"
                             )
-                    # Handle JSON file drop
                     elif path.is_file() and path.suffix.lower() == ".json":
                         self.json_file_path_signal.emit(str(path.resolve()))
                         event.acceptProposedAction()

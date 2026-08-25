@@ -69,7 +69,6 @@ class ProjectDataParser:
 
         self._parsed_data = result
 
-        # Log summary
         site_names = self.get_site_names()
         project_name = self.get_project_name()
         logger.info(
@@ -137,7 +136,6 @@ class ProjectDataParser:
         project = data.get("Project", {})
         if not isinstance(project, dict):
             return {}
-        # Return a copy without the Sites key
         return {
             key: value for key, value in project.items()
             if key != "Sites"
@@ -201,14 +199,11 @@ class ProjectDataParser:
 
         result = {}
 
-        # Include XML attributes
         if element.attrib:
             result.update(element.attrib)
 
-        # Process child elements
         children = list(element)
         if children:
-            # Group children by normalized tag
             child_groups: dict[str, list] = defaultdict(list)
             for child in children:
                 tag = self._normalize_tag(child.tag)
