@@ -1,72 +1,60 @@
 # ATC Project Explorer
 
-A desktop GUI for exploring **Thermo Scientific AutoTEM Cryo (ATC)** project
-metadata. Open an ATC project and browse each site's statistics,
-parameters, images, and instrument metadata. Global project data is also
-displayed, including site durations and relative site positions.
+<!-- Full documentation: https://<site>/scripts/atc_project_explorer/ (enable this link when the site is live) -->
 
-Built with PySide6. Developed with **AutoScript 4.13**; it runs inside the
-AutoScript Python environment with no additional packages, or standalone
-using the dependencies in [`requirements.txt`](requirements.txt).
+A PySide6 desktop utility for exploring Thermo Scientific AutoTEM Cryo (ATC) project metadata. Open an ATC project and browse each site's statistics, parameters, images, and instrument metadata, along with global project data such as site durations and relative site positions. The project information helps when developing ATC templates, troubleshooting lamella production, and understanding how ATC makes lamellae.
 
 ## Features
 
-- **Site explorer** — per-site statistics, parameters, and preview images.
-- **Image viewer** — browse a site's image directories with previous/next
-  navigation, scroll-wheel zoom, opacity cross-fade between images, and
-  an image-metadata tree.
-- **Pattern viewer** — view the relative sizes of the patterns used for a
-  site, along with their parameters.
-- **Site-position atlas** — a scatter map of site locations with an image
-  montage; click a marker to open that site directly or in a new window.
-- **Process-duration charts** — bar charts of per-step durations; click a bar
-  to open that site directly or in a new window.
-- **Detachable panels** — open a site in its own window, useful for comparing
-  two or more sites.
+- **Site explorer** with per-site statistics, parameters, and preview images.
+- **Image viewer** that browses a site's image directories with previous/next navigation, scroll-wheel zoom, opacity cross-fade between images, and an image-metadata tree.
+- **Pattern viewer** showing the relative sizes of the patterns used for a site along with their parameters.
+- **Site-position atlas** with a scatter map of site locations and an image montage; click a marker to open that site.
+- **Process-duration charts** of per-step durations; click a bar to open that site.
+- **Detachable panels** to open a site in its own window for comparing two or more sites.
 
 ## Requirements
 
 - Python 3.11+
-- Core: PySide6, numpy, matplotlib, Pillow (image loading)
-- Optional: tifffile (FEI/TFS TIFF metadata used for image overlays and the
-  atlas montage)
+- PySide6 6.7.1+
+- NumPy 2.2.5+
+- Matplotlib 3.8.1+
+- Pillow 10.1+
+- tifffile 2025.3.13+ (optional; used for FEI/TFS TIFF metadata in image overlays and the atlas montage)
 
-Minimum versions are listed in [`requirements.txt`](requirements.txt).
+AutoScript is not required. All packages above ship with the AutoScript 4.14 Python environment, where the script is developed and tested, so no extra installation is needed there.
 
-## Install
+## Installation
 
-```bash
-# from a clone or an extracted release ZIP (see Download below)
-python -m venv .venv
-.venv\Scripts\activate          # Windows
-# source .venv/bin/activate     # macOS / Linux
-pip install -r requirements.txt
+1. Download the latest release ZIP from the [Releases page](https://github.com/ChrisLeeThompson/ATC_Project_Explorer/releases).
+2. Extract it and copy the script folder to your desired location. The script does not connect to a microscope, so it can be installed on any PC that meets the requirements.
+3. If you run the script with the AutoScript Python environment, no packages need to be installed. Otherwise, install them with:
+
+   ```
+   pip install -r requirements.txt
+   ```
+
+## Running
+
+Run the main module from the script folder:
+
 ```
-
-If you are running inside an **AutoScript 4.13** Python environment, these
-packages are already available and no install is needed.
-
-## Run
-
-```bash
 python atc_project_explorer.py
 ```
 
-## Download
+The script also runs from the AutoScript Python interpreter or AutoScript Runner.
 
-Packaged source archives are attached to each tagged release on the
-[Releases page](https://github.com/ChrisLeeThompson/ATC_Project_Explorer/releases).
-Download and extract the ZIP for the version you want, then follow the
-**Install** / **Run** steps above.
+## Notes
+
+- Tested with ATC 2.4.6.
+- Parsing a project writes a temporary consolidated metadata file so later loads are fast. Its name and other options, such as whether the exported JSON is minified, are set in `config_files/ATCProjectExplorerConfig.json`.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright © 2026 Christopher Thompson.
+MIT, see [LICENSE](LICENSE). Copyright (c) 2026 Christopher Thompson.
 
-The Catbug artwork in `script_assets/` is not covered by the MIT license. See
-`LICENSE`.
+The Catbug artwork in `script_assets/` is not covered by the MIT license; see [LICENSE](LICENSE). PySide6 (Qt for Python) is licensed under the LGPLv3 and is used as an unmodified runtime dependency installed from PyPI; it is not distributed with this source.
 
 ## Contact
 
-Questions or suggestions are welcome — reach Chris Thompson on GitHub
-([@ChrisLeeThompson](https://github.com/ChrisLeeThompson)).
+Developed by Chris Thompson with assistance from Anthropic's Claude. Questions and suggestions are welcome: [@ChrisLeeThompson](https://github.com/ChrisLeeThompson) on GitHub.

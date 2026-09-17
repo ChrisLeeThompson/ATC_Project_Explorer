@@ -3,6 +3,9 @@
 # =============================================================
 # Python 3.11+
 #
+# Version floors are the versions in the Thermo Fisher AutoScript
+# 4.14 Python environment, where the app is developed and tested.
+#
 # Install:  pip install -r requirements.txt
 # =============================================================
 
@@ -13,15 +16,15 @@
 PySide6>=6.7.1
 
 # Numerical arrays for image data
-numpy>=1.24.0
+numpy>=2.2.5
 
 # Plotting — bar charts, scatter atlas, image viewer canvas
 # (uses the Qt-Agg backend via matplotlib.backends.backend_qtagg)
-matplotlib>=3.7.0
+matplotlib>=3.8.1
 
 # Image decoding for previews, thumbnails, and image info
 # (matplotlib's reader also relies on it for TIFF/JPEG files)
-Pillow>=10.0.0
+Pillow>=10.1.0
 
 # --- Optional Dependencies ------------------------------------
 # Imported lazily with a try/except guard; the application runs
@@ -30,4 +33,4 @@ Pillow>=10.0.0
 # TIFF metadata extraction (FEI/TFS instrument tags)
 # Needed for image overlay graphics and the site position
 # atlas image montage. Without it, TIF metadata is skipped.
-tifffile>=2023.2.0
+tifffile>=2025.3.13
