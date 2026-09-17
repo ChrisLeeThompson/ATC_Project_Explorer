@@ -1,8 +1,13 @@
 # ATC Project Explorer
 
-<!-- Full documentation: https://<site>/scripts/atc_project_explorer/ (enable this link when the site is live) -->
+> [!NOTE]
+> **Full documentation:** https://chrisleethompson.github.io/scripts/atc_project_explorer/
 
 A PySide6 desktop utility for exploring Thermo Scientific AutoTEM Cryo (ATC) project metadata. Open an ATC project and browse each site's statistics, parameters, images, and instrument metadata, along with global project data such as site durations and relative site positions. The project information helps when developing ATC templates, troubleshooting lamella production, and understanding how ATC makes lamellae.
+
+## Documentation
+
+Full documentation: https://chrisleethompson.github.io/scripts/atc_project_explorer/
 
 ## Features
 
