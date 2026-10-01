@@ -11,7 +11,9 @@ sources into a single structure:
     3. Directory scan — per-site image directory paths.
     4. PrecisePositioningLogImages — per-activity patterning
        rectangle geometry and measured beam current, extracted
-       by ``pattern_data_parser``.
+       by ``pattern_data_parser``.  An activity the site ran more
+       than once (per its statistics) gets one entry per run,
+       tagged ``RunIndex`` / ``RunCount``.
 
 The output structure:
 
@@ -47,6 +49,7 @@ Usage:
 """
 import json
 import logging
+from collections import Counter
 from pathlib import Path
 from typing import Callable
 
@@ -145,6 +148,10 @@ def build_consolidated_metadata(
             pattern_data = extract_site_pattern_data(
                 image_directories=image_directories,
                 project_root=Path(project_root_path),
+                run_counts=Counter(
+                    activity.get("ActivityName", "")
+                    for activity in statistics_entry["Activities"]
+                ),
             )
 
         sites.append({

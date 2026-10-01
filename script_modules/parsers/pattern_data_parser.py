@@ -17,11 +17,16 @@ For each site the parser:
    → ``"Rough Milling"``).  Activities that never contain
    patterning data (e.g. Eucentric Tilt, Reference Definition)
    are skipped by keyword matching.
-3. Reads the **most recent** image per activity group.  A quick
-   byte scan for the ``PatterningInformation`` marker is
-   performed before full XML parsing to skip files without
-   pattern data.
-4. Extracts ``PatterningInformation`` rectangle geometry and
+3. Splits an activity that the site ran more than once into its
+   runs.  The run count comes from the site's statistics
+   (``run_counts``); the images are split at the largest gaps
+   between their filename timestamps.  Each run then yields its
+   own entry, tagged ``"RunIndex"`` / ``"RunCount"``.
+4. Reads the **most recent** image per run (or per activity when
+   there is a single run).  A quick byte scan for the
+   ``PatterningInformation`` marker is performed before full XML
+   parsing to skip files without pattern data.
+5. Extracts ``PatterningInformation`` rectangle geometry and
    ``Metrics.MeasuredBeamCurrent`` from the embedded FEI XML
    metadata.
 
@@ -39,10 +44,12 @@ Usage::
     pattern_data = extract_site_pattern_data(
         image_directories=site["ImageDirectories"],
         project_root=Path("/path/to/project"),
+        run_counts={"Polishing 2": 3},
     )
 """
 import logging
 import re
+from datetime import datetime
 from pathlib import Path
 
 from script_modules.parsers.image_metadata_parser import (
@@ -57,15 +64,16 @@ logger = logging.getLogger(__name__)
 # match-information images with embedded patterning metadata.
 _PRECISE_POS_DIR = "PrecisePositioningLogImages"
 
-# Regex to parse the activity name from the filename.
+# Regex to parse the timestamp and activity name from the filename.
 # Format: YYYY-MM-DD-HH-MM-SS-Activity-Name-match-information-image.png
 _FILENAME_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-"  # timestamp prefix
-    r"(.+?)"                                  # activity name
-    r"-match-information-image"               # suffix
-    r"\.\w+$",                                # extension
+    r"^(\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2})-"  # timestamp prefix
+    r"(.+?)"                                    # activity name
+    r"-match-information-image"                 # suffix
+    r"\.\w+$",                                  # extension
     re.IGNORECASE,
 )
+_TIMESTAMP_FORMAT = "%Y-%m-%d-%H-%M-%S"
 
 # Activity name substrings (lowercase) that never contain
 # PatterningInformation.  These are skipped during grouping
@@ -92,21 +100,27 @@ _PATTERNING_MARKER = b"PatterningInformation"
 def extract_site_pattern_data(
     image_directories: list[dict],
     project_root: Path,
+    run_counts: dict[str, int] | None = None,
 ) -> list[dict]:
     """Extract patterning data for a single site.
 
     Scans the ``PrecisePositioningLogImages`` directory, groups
     images by activity name (skipping activities that never have
-    patterns), and extracts patterning rectangle geometry plus
-    supplementary metadata from the most recent image per
-    activity.
+    patterns), splits activities run more than once into their
+    runs, and extracts patterning rectangle geometry plus
+    supplementary metadata from the most recent image per run.
 
     :param image_directories: The ``"ImageDirectories"`` list
         from a single site entry in the consolidated metadata.
     :param project_root: Absolute path to the ATC project root
         directory, used to resolve relative image paths.
-    :return: List of pattern data dicts, one per activity that
-        has patterning data.  Empty list if none found.
+    :param run_counts: Optional ``{activity_name: run_count}`` from
+        the site's statistics.  Activities absent from it, or with
+        a count of 1, produce a single entry.
+    :return: List of pattern data dicts, one per run of each
+        activity that has patterning data.  Entries of a split
+        activity carry ``"RunIndex"`` (1-based) and ``"RunCount"``.
+        Empty list if none found.
     """
     # Locate the PrecisePositioningLogImages directory
     rel_paths = _find_precise_pos_paths(image_directories)
@@ -118,11 +132,15 @@ def extract_site_pattern_data(
     if not activity_groups:
         return []
 
+    run_counts = run_counts or {}
     result: list[dict] = []
 
     for activity_name, paths in activity_groups.items():
         entries = _extract_activity_entries(
-            activity_name, paths, project_root
+            activity_name,
+            paths,
+            project_root,
+            run_count=run_counts.get(activity_name, 1),
         )
         result.extend(entries)
 
@@ -187,7 +205,7 @@ def _group_by_activity(
         # Handle triple-hyphens first (e.g.
         # "Polishing-2---Electron-Image"
         # → "Polishing 2 - Electron Image").
-        raw_name = match.group(1)
+        raw_name = match.group(2)
         activity_name = (
             raw_name
             .replace("---", "\x00")
@@ -211,25 +229,104 @@ def _extract_activity_entries(
     activity_name: str,
     rel_paths: list[str],
     project_root: Path,
+    run_count: int = 1,
 ) -> list[dict]:
     """Extract pattern entries for a single activity.
 
-    Reads the most recent image for the activity and extracts
+    Reads the most recent image of each run and extracts
     patterning rectangle geometry plus supplementary metadata.
 
     :param activity_name: Display name of the activity.
     :param rel_paths: Sorted list of relative image paths for
         this activity.
     :param project_root: Absolute path to the project root.
-    :return: List containing a single pattern data dict, or
-        empty list if extraction fails.
+    :param run_count: Number of times the site ran the activity.
+    :return: One pattern data dict per run that yields an entry
+        (tagged with ``RunIndex`` / ``RunCount`` when the activity
+        was split), or a single untagged dict.  Empty list if
+        extraction fails.
     """
-    entry = _read_last_image(
-        rel_paths, project_root, activity_name
+    runs = _split_into_runs(rel_paths, run_count)
+    if len(runs) == 1:
+        entry = _read_last_image(
+            rel_paths, project_root, activity_name
+        )
+        return [entry] if entry is not None else []
+
+    entries: list[dict] = []
+    for index, run_paths in enumerate(runs, start=1):
+        entry = _read_last_image(
+            run_paths, project_root, activity_name
+        )
+        if entry is None:
+            continue
+        entry["RunIndex"] = index
+        entry["RunCount"] = len(runs)
+        entries.append(entry)
+    return entries
+
+
+def _split_into_runs(
+    rel_paths: list[str],
+    run_count: int,
+) -> list[list[str]]:
+    """Split an activity's images into its runs.
+
+    A run's images are taken seconds to minutes apart, while runs
+    are separated by the other activities in between, so the
+    ``run_count - 1`` largest gaps between filename timestamps
+    mark the run boundaries.  This is a heuristic: a run that left
+    no images, or runs that follow each other without a pause, can
+    put a boundary inside a run.
+
+    :param rel_paths: Sorted list of relative image paths for one
+        activity.
+    :param run_count: Number of runs from the site's statistics.
+    :return: ``run_count`` lists in chronological order, or
+        ``[rel_paths]`` when there is one run, fewer images than
+        runs, or a filename whose timestamp does not parse.
+    """
+    if run_count <= 1 or len(rel_paths) < run_count:
+        return [rel_paths]
+
+    timestamps: list[datetime] = []
+    for rel_path in rel_paths:
+        stamp = _parse_timestamp(rel_path)
+        if stamp is None:
+            return [rel_paths]
+        timestamps.append(stamp)
+
+    gaps = [
+        (timestamps[i + 1] - timestamps[i], i + 1)
+        for i in range(len(timestamps) - 1)
+    ]
+    boundaries = sorted(
+        i for _, i in sorted(gaps, reverse=True)[: run_count - 1]
     )
-    if entry is None:
-        return []
-    return [entry]
+
+    runs: list[list[str]] = []
+    start = 0
+    for boundary in boundaries + [len(rel_paths)]:
+        runs.append(rel_paths[start:boundary])
+        start = boundary
+    return runs
+
+
+def _parse_timestamp(rel_path: str) -> datetime | None:
+    """Parse the timestamp prefix of a match-information filename.
+
+    :param rel_path: Relative image path.
+    :return: The timestamp, or *None* if the filename does not
+        follow the naming convention.
+    """
+    fname = rel_path.replace("\\", "/").split("/")[-1]
+    match = _FILENAME_RE.match(fname)
+    if not match:
+        return None
+    try:
+        return datetime.strptime(match.group(1), _TIMESTAMP_FORMAT)
+    except ValueError:
+        return None
 
 
 def _read_last_image(

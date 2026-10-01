@@ -16,7 +16,10 @@ Shared functionality:
     - ``_clear_axes()`` to reset and restyle.
     - ``_set_title_and_top_legend()`` for the standard title plus
       horizontal frameless legend band above the axes.
-    - Hover tooltip annotation and highlight rectangle creation.
+    - Hover tooltip annotation and highlight rectangle creation:
+      a plain text tooltip (``_create_annotation``) or a two-column
+      one with labels left and values right
+      (``_create_table_annotation`` / ``_set_table_annotation_rows``).
     - Optional ``NavigationToolbar2QT`` (zoom, pan, home, save)
       enabled via the ``_toolbar_enabled`` class attribute.
 
@@ -50,6 +53,7 @@ from matplotlib.backends.backend_qtagg import (
     NavigationToolbar2QT,
 )
 from matplotlib.figure import Figure
+from matplotlib.offsetbox import AnnotationBbox, HPacker, TextArea
 from matplotlib.patches import Rectangle
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QGroupBox, QSizePolicy
@@ -83,6 +87,7 @@ class StyledChartWidget(QWidget):
         super().__init__(parent)
         # Hover tooltip state (managed by subclasses)
         self._annotation = None
+        self._annotation_columns = None
         self._hover_rect = None
         self._toolbar = None
         self._create_matplotlib_components()
@@ -294,6 +299,17 @@ class StyledChartWidget(QWidget):
     # Hover Annotation Helpers
     # -----------------------------------------------------------------
 
+    # Tooltip offset from the cursor, in points
+    _TOOLTIP_OFFSET_PT = 10
+
+    # Tooltip frame, shared by both annotation kinds
+    _TOOLTIP_BBOX = dict(
+        boxstyle="round,pad=0.4",
+        facecolor=AppStyles.Colors.INPUT_BG,
+        edgecolor=AppStyles.Colors.PLOT_SPINE_COLOR,
+        alpha=0.95,
+    )
+
     def _create_annotation(self):
         """Create the hover annotation and highlight rectangle
         (both hidden by default).
@@ -304,19 +320,92 @@ class StyledChartWidget(QWidget):
         self._annotation = self.ax.annotate(
             "",
             xy=(0, 0),
-            xytext=(10, 10),
+            xytext=(self._TOOLTIP_OFFSET_PT, self._TOOLTIP_OFFSET_PT),
             textcoords="offset points",
-            bbox=dict(
-                boxstyle="round,pad=0.4",
-                facecolor=AppStyles.Colors.INPUT_BG,
-                edgecolor=AppStyles.Colors.PLOT_SPINE_COLOR,
-                alpha=0.95,
-            ),
+            bbox=dict(self._TOOLTIP_BBOX),
             fontsize=AppStyles.Dimensions.PLOT_TOOLTIP_FONT_SIZE,
             color=AppStyles.Colors.TEXT_PRIMARY,
             zorder=100,
             visible=False,
         )
+        self._create_hover_rect()
+
+    def _create_table_annotation(self):
+        """Create a two-column hover tooltip (labels left, values
+        right) and the highlight rectangle, both hidden by default.
+
+        Each column is one multi-line text block, packed side by
+        side, so the values line up in the chart's proportional
+        font.  Fill it with :meth:`_set_table_annotation_rows` and
+        position it with :meth:`_place_table_annotation`.
+        """
+        textprops = dict(
+            fontsize=AppStyles.Dimensions.PLOT_TOOLTIP_FONT_SIZE,
+            color=AppStyles.Colors.TEXT_PRIMARY,
+        )
+        self._annotation_columns = (
+            TextArea("", textprops=textprops),
+            TextArea("", textprops=textprops),
+        )
+        table = HPacker(
+            children=list(self._annotation_columns),
+            align="top",
+            pad=0,
+            sep=AppStyles.Dimensions.PLOT_TOOLTIP_COLUMN_GAP_PT,
+        )
+        self._annotation = AnnotationBbox(
+            table,
+            xy=(0, 0),
+            xybox=(self._TOOLTIP_OFFSET_PT, self._TOOLTIP_OFFSET_PT),
+            boxcoords="offset points",
+            # Bottom-left corner sits at the offset point; the box
+            # alignment is fixed, _place_table_annotation moves the
+            # offset instead.
+            box_alignment=(0, 0),
+            bboxprops=dict(self._TOOLTIP_BBOX),
+            zorder=100,
+        )
+        self._annotation.set_visible(False)
+        self.ax.add_artist(self._annotation)
+        self._create_hover_rect()
+
+    def _set_table_annotation_rows(
+        self, rows: list[tuple[str, str]]
+    ) -> None:
+        """Fill the two-column tooltip.
+
+        :param rows: ``(label, value)`` per line; ``("", "")`` makes
+            a blank line.
+        """
+        labels, values = self._annotation_columns
+        labels.set_text("\n".join(label for label, _ in rows))
+        values.set_text("\n".join(value for _, value in rows))
+
+    def _place_table_annotation(
+        self, x: float, y: float, below: bool = False,
+    ) -> None:
+        """Anchor the two-column tooltip at data point ``(x, y)``.
+
+        By default the box rises from just above-right of the point.
+        With ``below`` it hangs from just below-right instead — for
+        points near the top of the axes, where a tall box would run
+        off the canvas.  Call after :meth:`_set_table_annotation_rows`,
+        since the drop is the box's measured height.
+        """
+        offset = self._TOOLTIP_OFFSET_PT
+        dy = offset
+        if below:
+            bbox = self._annotation.offsetbox.get_bbox(
+                self.canvas.get_renderer()
+            )
+            height_pt = bbox.height * 72.0 / self.figure.get_dpi()
+            dy = -(offset + height_pt)
+        self._annotation.xy = (x, y)
+        self._annotation.xybox = (offset, dy)
+
+    def _create_hover_rect(self):
+        """Create the hidden highlight rectangle drawn around the
+        hovered element."""
         self._hover_rect = Rectangle(
             (0, 0), 0, 0,
             linewidth=AppStyles.Dimensions.PLOT_LINE_WIDTH,

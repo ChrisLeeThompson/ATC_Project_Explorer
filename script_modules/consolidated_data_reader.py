@@ -7,9 +7,11 @@ between the consolidated metadata (built by
 ``consolidated_metadata_writer``) and the UI components that display
 project statistics, per-site details, and plot data.
 
-``get_global_stats()`` computes project-wide means for the global
-stats panel; ``get_site_stats()`` extracts per-site values for the
-site stats panel.
+``get_global_stats()`` and ``get_activity_duration_means()`` compute
+project-wide means for the global stats panel; ``get_site_stats()``
+extracts per-site values for the site stats panel;
+``group_site_activities_by_segment()`` lists a site's activity runs
+for the duration chart.
 """
 import logging
 from dataclasses import dataclass
@@ -82,6 +84,48 @@ class CategorizedDurations:
     def preparation_without_placement_s(self) -> int:
         """Preparation duration excluding lamella placement."""
         return self.preparation_s - self.lamella_placement_s
+
+
+@dataclass
+class ActivityMean:
+    """Mean duration of one activity across sites, for the global
+    stats panel.
+
+    ``mean_duration`` is the mean over sites of each site's total for
+    the activity (all runs summed), formatted ``HH:MM:SS``;
+    ``site_count`` is the number of sites in that mean.
+    """
+    name: str
+    mean_duration: str
+    site_count: int
+
+
+@dataclass
+class SegmentActivity:
+    """One activity run within a duration-chart segment.
+
+    ``label`` carries the run marker (see :func:`format_run_label`),
+    ``run_count`` is how many times the site ran the activity.
+    """
+    label: str
+    seconds: int
+    run_count: int
+
+
+# Segment keys of the global duration chart.  "Preparation" excludes
+# lamella placement, which is its own segment.
+SEGMENT_PREPARATION = "Preparation"
+SEGMENT_LAMELLA_PLACEMENT = "Lamella Placement"
+SEGMENT_MILLING = "Milling"
+SEGMENT_THINNING = "Thinning"
+SEGMENT_DELAY = "Delay"
+SEGMENT_KEYS = (
+    SEGMENT_PREPARATION,
+    SEGMENT_LAMELLA_PLACEMENT,
+    SEGMENT_MILLING,
+    SEGMENT_THINNING,
+    SEGMENT_DELAY,
+)
 
 
 # =====================================================================
@@ -344,27 +388,58 @@ def categorize_site_durations(
     """Categorize a single site's activity durations by workflow
     step.
 
-    Builds the activity-to-step mapping from the site's recipe
-    tree and iterates the Statistics activities to bucket durations
-    into Preparation, Lamella Placement, Milling, Thinning, and
-    Delay.
+    Sums the segments of :func:`group_site_activities_by_segment`
+    into Preparation (including lamella placement), Lamella
+    Placement, Milling, Thinning, and Delay.
 
     :param site_data: A single site entry from the consolidated
         metadata ``"Sites"`` list.
     :return: A ``CategorizedDurations`` dataclass with bucketed
         seconds.
     """
+    segments = group_site_activities_by_segment(site_data)
+
+    def total(key: str) -> int:
+        return sum(a.seconds for a in segments[key])
+
+    lp_s = total(SEGMENT_LAMELLA_PLACEMENT)
+    return CategorizedDurations(
+        preparation_s=total(SEGMENT_PREPARATION) + lp_s,
+        lamella_placement_s=lp_s,
+        milling_s=total(SEGMENT_MILLING),
+        thinning_s=total(SEGMENT_THINNING),
+        delay_s=total(SEGMENT_DELAY),
+    )
+
+
+def group_site_activities_by_segment(
+    site_data: dict,
+) -> dict[str, list[SegmentActivity]]:
+    """List a site's activity runs under their duration-chart
+    segment.
+
+    Builds the activity-to-step mapping from the site's recipe tree
+    and walks the Statistics activities in order.  ``Delay`` rows go
+    to their own segment regardless of recipe (so they don't inflate
+    the parent step); ``Lamella Placement`` is split out of
+    Preparation.  Rows with an unparseable or zero duration, and
+    activities the recipe doesn't know, are left out.
+
+    :param site_data: A single site entry from the consolidated
+        metadata ``"Sites"`` list.
+    :return: ``{segment_key: [SegmentActivity, ...]}`` with every
+        key of ``SEGMENT_KEYS`` present.
+    """
     site_pd = site_data.get("SiteProjectData", {})
-    stats = site_data.get("Statistics", {})
+    activities = site_data.get("Statistics", {}).get("Activities", [])
     step_map = build_activity_step_map(site_pd)
 
-    prep_s = 0
-    lp_s = 0
-    mill_s = 0
-    thin_s = 0
-    delay_s = 0
-
-    for activity in stats.get("Activities", []):
+    segments: dict[str, list[SegmentActivity]] = {
+        key: [] for key in SEGMENT_KEYS
+    }
+    for activity, (run_index, run_count) in zip(
+        activities, number_activity_runs(activities)
+    ):
         act_name = activity.get("ActivityName", "")
         act_seconds = parse_duration_to_seconds(
             activity.get("Duration", "")
@@ -372,35 +447,32 @@ def categorize_site_durations(
         if act_seconds is None:
             continue
 
-        # Delay activities are tracked in their own bucket
-        # regardless of which recipe they belong to, so they
-        # don't inflate the parent step's duration.
         if act_name == "Delay":
-            delay_s += act_seconds
-            continue
-
-        step = step_map.get(act_name, "")
-        if step == "Preparation":
-            prep_s += act_seconds
-            if act_name == "Lamella Placement":
-                lp_s += act_seconds
-        elif step == "Milling":
-            mill_s += act_seconds
-        elif step == "Thinning":
-            thin_s += act_seconds
+            key = SEGMENT_DELAY
         else:
-            logger.debug(
-                f"Unmatched activity '{act_name}' in "
-                f"site '{site_data.get('SiteName', 'Unknown')}'"
-            )
+            step = step_map.get(act_name, "")
+            if step == "Preparation":
+                key = (
+                    SEGMENT_LAMELLA_PLACEMENT
+                    if act_name == "Lamella Placement"
+                    else SEGMENT_PREPARATION
+                )
+            elif step in (SEGMENT_MILLING, SEGMENT_THINNING):
+                key = step
+            else:
+                logger.debug(
+                    f"Unmatched activity '{act_name}' in "
+                    f"site '{site_data.get('SiteName', 'Unknown')}'"
+                )
+                continue
 
-    return CategorizedDurations(
-        preparation_s=prep_s,
-        lamella_placement_s=lp_s,
-        milling_s=mill_s,
-        thinning_s=thin_s,
-        delay_s=delay_s,
-    )
+        segments[key].append(SegmentActivity(
+            label=format_run_label(act_name, run_index, run_count),
+            seconds=act_seconds,
+            run_count=run_count,
+        ))
+
+    return segments
 
 
 def build_activity_step_map(
@@ -454,6 +526,7 @@ def _collect_activity_names(obj) -> list[str]:
         for item in obj:
             names.extend(_collect_activity_names(item))
     return names
+
 
 def extract_final_thickness(
     site_project_data: dict,
@@ -545,6 +618,146 @@ def extract_lamella_width(
             exc_info=True,
         )
         return None
+
+
+# =====================================================================
+# Activity Runs
+# =====================================================================
+#
+# A site can run the same activity more than once (e.g. "Polishing 2"
+# three times).  Statistics.txt records each run as its own row, in
+# chronological order, so an activity's runs are the rows sharing its
+# name, numbered by position.
+
+def number_activity_runs(
+    activities: list[dict],
+) -> list[tuple[int, int]]:
+    """Number the runs of each activity name.
+
+    :param activities: A site's ``Statistics.Activities`` list.
+    :return: One ``(run_index, run_count)`` per entry, in list order,
+        with ``run_index`` 1-based within the entry's name.
+    """
+    counts: dict[str, int] = {}
+    for activity in activities:
+        name = activity.get("ActivityName", "")
+        counts[name] = counts.get(name, 0) + 1
+
+    seen: dict[str, int] = {}
+    result: list[tuple[int, int]] = []
+    for activity in activities:
+        name = activity.get("ActivityName", "")
+        seen[name] = seen.get(name, 0) + 1
+        result.append((seen[name], counts[name]))
+    return result
+
+
+def format_run_label(
+    name: str, run_index: int, run_count: int,
+) -> str:
+    """Label one run of an activity for display.
+
+    Shared by the site activity chart and the pattern viewer so a
+    repeated activity reads the same everywhere.
+
+    :param name: Activity name.
+    :param run_index: 1-based run number.
+    :param run_count: Number of runs of this activity at the site.
+    :return: ``name`` alone for a single run, otherwise
+        ``"name (run_index/run_count)"``.
+    """
+    if run_count <= 1:
+        return name
+    return f"{name} ({run_index}/{run_count})"
+
+
+def group_activity_durations(
+    activities: list[dict],
+) -> dict[str, list[str]]:
+    """Group duration strings by activity name, in run order.
+
+    :param activities: A site's ``Statistics.Activities`` list.
+    :return: Mapping ``{name: [duration, ...]}``.
+    """
+    result: dict[str, list[str]] = {}
+    for activity in activities:
+        name = activity.get("ActivityName", "")
+        result.setdefault(name, []).append(
+            activity.get("Duration", "")
+        )
+    return result
+
+
+def get_activity_duration_means(metadata: dict) -> list[ActivityMean]:
+    """Mean duration of every activity across the given sites.
+
+    Each site contributes its total for an activity (all runs summed);
+    sites where that total is zero or missing are left out of the
+    mean, matching :func:`get_global_stats`.  Activities are listed in
+    workflow order, merged across sites (see
+    :func:`_merge_activity_order`).
+
+    :param metadata: Consolidated metadata dictionary (the ``"Sites"``
+        list is the only key used).
+    :return: One ``ActivityMean`` per activity name found.
+    """
+    totals: dict[str, list[int]] = {}
+    order: list[str] = []
+
+    for site in metadata.get("Sites", []):
+        activities = site.get("Statistics", {}).get("Activities", [])
+        site_seconds: dict[str, int] = {}
+        for activity in activities:
+            name = activity.get("ActivityName", "")
+            if not name:
+                continue
+            seconds = parse_duration_to_seconds(
+                activity.get("Duration", "")
+            ) or 0
+            site_seconds[name] = site_seconds.get(name, 0) + seconds
+
+        order = _merge_activity_order(order, list(site_seconds))
+        for name, seconds in site_seconds.items():
+            if seconds > 0:
+                totals.setdefault(name, []).append(seconds)
+
+    return [
+        ActivityMean(
+            name=name,
+            mean_duration=format_mean_duration(totals.get(name, [])),
+            site_count=len(totals.get(name, [])),
+        )
+        for name in order
+    ]
+
+
+def _merge_activity_order(
+    order: list[str], sequence: list[str],
+) -> list[str]:
+    """Merge one site's activity sequence into the running order.
+
+    A name not yet listed is inserted right after its nearest
+    predecessor (in ``sequence``) that is already listed, or appended
+    when none of its predecessors is.  Sites run their activities in
+    workflow order, so this keeps a name that only some sites have
+    (e.g. ``Reference Redefinition 1``) in its workflow position.
+
+    :param order: Names merged so far (not mutated).
+    :param sequence: One site's activity names, first occurrences in
+        chronological order.
+    :return: The merged order.
+    """
+    merged = list(order)
+    for i, name in enumerate(sequence):
+        if name in merged:
+            continue
+        insert_at = len(merged)
+        for predecessor in reversed(sequence[:i]):
+            if predecessor in merged:
+                insert_at = merged.index(predecessor) + 1
+                break
+        merged.insert(insert_at, name)
+    return merged
 
 
 # =====================================================================

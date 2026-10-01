@@ -8,8 +8,11 @@ or Delay). Lamella Placement uses a distinct color to match the
 global duration chart.
 
 Duration labels appear at the end of each bar in HH:MM:SS format.
-Hovering over a bar displays a tooltip with the activity name and
-duration, and highlights the bar with a white border.
+An activity the site ran more than once gets one bar per run,
+labeled ``"Polishing 2 (2/3)"`` (the same run label the pattern
+viewer uses).  Hovering over a bar displays a tooltip with the
+activity label and duration, and highlights the bar with a white
+border.
 
 The x-axis is formatted in HH:MM:SS to match the application's
 duration display convention. The widget height adjusts dynamically
@@ -25,6 +28,8 @@ from matplotlib.ticker import FuncFormatter
 from script_modules.app_styles import AppStyles
 from script_modules.consolidated_data_reader import (
     build_activity_step_map,
+    format_run_label,
+    number_activity_runs,
     parse_duration_to_seconds,
     format_seconds,
 )
@@ -93,6 +98,7 @@ class SiteActivityBarChartWidget(StyledChartWidget):
             return
 
         step_map = build_activity_step_map(site_pd)
+        runs = number_activity_runs(activities)
 
         # -- Extract activity data (reverse for top-to-bottom order) --
         act_names: list[str] = []
@@ -101,7 +107,9 @@ class SiteActivityBarChartWidget(StyledChartWidget):
         # Track which steps appear for the legend
         steps_seen: set[str] = set()
 
-        for activity in reversed(activities):
+        for activity, (run_index, run_count) in reversed(
+            list(zip(activities, runs))
+        ):
             name = activity.get("ActivityName", "")
             secs = parse_duration_to_seconds(
                 activity.get("Duration", "")
@@ -121,7 +129,9 @@ class SiteActivityBarChartWidget(StyledChartWidget):
                 color_key, AppStyles.Colors.TEXT_DISABLED
             )
 
-            act_names.append(name)
+            act_names.append(
+                format_run_label(name, run_index, run_count)
+            )
             act_seconds.append(secs)
             act_colors.append(color)
             if color_key:
@@ -188,7 +198,7 @@ class SiteActivityBarChartWidget(StyledChartWidget):
         self.ax.set_xlabel("\nDuration")
 
         # -- Title and legend (only steps that appear) ----------------
-        # The bars are drawn in one unlabelled barh call, so legend
+        # The bars are drawn in one unlabeled barh call, so legend
         # entries are built as Patch proxies and handed to the shared
         # helper, which renders the same horizontal legend band as
         # the global duration chart.

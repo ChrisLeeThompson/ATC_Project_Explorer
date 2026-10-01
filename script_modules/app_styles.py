@@ -120,6 +120,10 @@ class StyleColors:
     PLOT_THINNING_BAR_COLOR = "#2DE0ED"
     PLOT_LAMELLA_PLACEMENT_BAR_COLOR = "#F0A830"
     PLOT_DELAY_BAR_COLOR = "#1F6FA1"
+    # Hatch over a duration-chart segment holding a repeated activity
+    # (the lines, and the neutral legend swatch behind them).
+    PLOT_REPEAT_HATCH_COLOR = "#FFFFFFA0"
+    PLOT_REPEAT_HATCH_SWATCH_BG = "#5A6B78"
     IMAGE_VIEWER_CROSSHAIR_COLOR = "#00CEC8"
     SITE_POSITION_PLOT_MARKER_COLOR = "#2EA2EC"
     SITE_POSITION_PLOT_MARKER_EDGE_COLOR = "#ffffff"
@@ -162,6 +166,7 @@ class StyleDimensions:
     PLOT_TITLE_FONT_SIZE = 11
     PLOT_LABEL_FONT_SIZE = 10
     PLOT_TOOLTIP_FONT_SIZE = 10
+    PLOT_TOOLTIP_COLUMN_GAP_PT = 14  # between a tooltip's label and value columns
     # Drawn per-row checkboxes on matplotlib charts (duration bar chart).
     # Pixel values are logical pixels at the nominal figure dpi (110); the
     # chart converts px -> points with PLOT_NOMINAL_DPI, never the runtime
@@ -179,8 +184,14 @@ class StyleDimensions:
     PLOT_CHECKBOX_DASH_HEIGHT_PX = 4
     PLOT_TITLE_LEGEND_PAD_PT = 24    # title pad reserving the legend band
     PLOT_TITLE_DEFAULT_PAD_PT = 6    # matplotlib default axes.titlepad
+    # matplotlib hatch pattern for repeated-activity segments; more
+    # characters = denser lines.
+    PLOT_REPEAT_HATCH = "//"
     # Preview image dimensions
     PREVIEW_MAX_DIM_DEFAULT = 512
+    # Global stats groupbox: fixed height (its content scrolls); this
+    # also sets the height of the preview-card row beside it.
+    GLOBAL_STATS_GROUPBOX_HEIGHT = 420
     # Global site preview dimensions
     GLOBAL_SITE_PREVIEW_CARD_FIXED_WIDTH = 300
     GLOBAL_SITE_PREVIEW_CARD_THUMBNAIL_MAX_DIM = 256
@@ -341,7 +352,22 @@ class LabelStyles:
             }}
             {ToolTips.default()}
         """
-    
+
+    @staticmethod
+    def section_header() -> str:
+        """Bold heading for a section within a groupbox — same
+        geometry as ``default()`` so it aligns with the rows."""
+        return f"""
+            QLabel {{
+                font-size: {StyleDimensions.FONT_SIZE_NORMAL};
+                font-weight: bold;
+                color: {StyleColors.TEXT_PRIMARY};
+                margin-left: {StyleDimensions.MARGIN};
+                margin-right: {StyleDimensions.MARGIN};
+            }}
+            {ToolTips.default()}
+        """
+
     @staticmethod
     def status_bar() -> str:
         return f"""

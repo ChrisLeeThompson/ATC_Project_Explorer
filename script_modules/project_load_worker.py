@@ -32,11 +32,30 @@ from script_modules.preview_media_loader import load_project_media
 logger = logging.getLogger(__name__)
 
 
+# Progress bar scale.  Each stage's value is where the bar sits when
+# that stage starts; preview media then advances per site from its
+# start value up to ``_PROGRESS_TOTAL``.  The slices are estimates of
+# relative duration, not measurements.
+_PROGRESS_TOTAL = 100
+
+_DIR_PROGRESS_PROJECT_DATA = 0
+_DIR_PROGRESS_STATISTICS = 5
+_DIR_PROGRESS_SCAN = 10
+_DIR_PROGRESS_BUILD = 30
+_DIR_PROGRESS_SAVE = 45
+_DIR_PROGRESS_MEDIA = 50
+
+_JSON_PROGRESS_LOAD = 0
+_JSON_PROGRESS_MEDIA = 10
+
+
 class ProjectLoadWorker(QObject):
     """Background worker for project I/O operations.
 
-    :signal progress: ``(current_step, total_steps, description)``
-        emitted before each processing step begins.
+    :signal progress: ``(value, maximum, description)`` emitted as
+        each processing stage begins and after each site's preview
+        media loads.  ``value`` never decreases during a run and
+        reaches ``maximum`` only once loading is complete.
     :signal finished: ``(result_dict)`` emitted on successful
         completion.  The dict contains:
 
@@ -157,11 +176,14 @@ class ProjectLoadWorker(QObject):
     def _run_directory_parse(self) -> None:
         """Parse an ATC project directory through the full
         pipeline: three parsers → build → save → preload media."""
-        total_steps = 6
         project_path = self._project_path
 
         # Step 1: Parse ProjectData.dat
-        self.progress.emit(1, total_steps, "Parsing ProjectData.dat...")
+        self.progress.emit(
+            _DIR_PROGRESS_PROJECT_DATA,
+            _PROGRESS_TOTAL,
+            "Parsing ProjectData.dat...",
+        )
         if self._is_cancelled():
             return
         try:
@@ -180,7 +202,11 @@ class ProjectLoadWorker(QObject):
             return
 
         # Step 2: Parse Statistics.txt
-        self.progress.emit(2, total_steps, "Parsing Statistics.txt...")
+        self.progress.emit(
+            _DIR_PROGRESS_STATISTICS,
+            _PROGRESS_TOTAL,
+            "Parsing Statistics.txt...",
+        )
         if self._is_cancelled():
             return
         try:
@@ -200,7 +226,9 @@ class ProjectLoadWorker(QObject):
 
         # Step 3: Directory scan (often the slowest step)
         self.progress.emit(
-            3, total_steps, "Scanning image directories..."
+            _DIR_PROGRESS_SCAN,
+            _PROGRESS_TOTAL,
+            "Scanning image directories...",
         )
         if self._is_cancelled():
             return
@@ -227,7 +255,9 @@ class ProjectLoadWorker(QObject):
 
         # Step 4: Build consolidated metadata
         self.progress.emit(
-            4, total_steps, "Building consolidated metadata..."
+            _DIR_PROGRESS_BUILD,
+            _PROGRESS_TOTAL,
+            "Building consolidated metadata...",
         )
         if self._is_cancelled():
             return
@@ -255,7 +285,9 @@ class ProjectLoadWorker(QObject):
 
         # Step 5: Save temporary JSON
         self.progress.emit(
-            5, total_steps, "Saving temporary metadata file..."
+            _DIR_PROGRESS_SAVE,
+            _PROGRESS_TOTAL,
+            "Saving temporary metadata file...",
         )
         if self._is_cancelled():
             return
@@ -277,7 +309,9 @@ class ProjectLoadWorker(QObject):
 
         # Step 6: Preload preview + atlas media off the GUI thread
         self.progress.emit(
-            6, total_steps, "Loading preview media..."
+            _DIR_PROGRESS_MEDIA,
+            _PROGRESS_TOTAL,
+            "Loading preview media...",
         )
         if self._is_cancelled():
             return
@@ -286,11 +320,7 @@ class ProjectLoadWorker(QObject):
                 metadata,
                 project_path,
                 cancel_check=self._cancel_requested,
-                progress=lambda done, total: self.progress.emit(
-                    6,
-                    total_steps,
-                    f"Loading preview media... ({done}/{total})",
-                ),
+                progress=self._media_progress(_DIR_PROGRESS_MEDIA),
             )
         except OperationCancelled:
             self.cancelled.emit()
@@ -327,11 +357,12 @@ class ProjectLoadWorker(QObject):
 
     def _run_json_load(self) -> None:
         """Load and validate a consolidated metadata JSON file."""
-        total_steps = 2
         path = self._json_file_path
 
         self.progress.emit(
-            1, total_steps, f"Loading {path.name}..."
+            _JSON_PROGRESS_LOAD,
+            _PROGRESS_TOTAL,
+            f"Loading {path.name}...",
         )
         if self._is_cancelled():
             return
@@ -381,7 +412,9 @@ class ProjectLoadWorker(QObject):
         media = None
         if project_root is not None:
             self.progress.emit(
-                2, total_steps, "Loading preview media..."
+                _JSON_PROGRESS_MEDIA,
+                _PROGRESS_TOTAL,
+                "Loading preview media...",
             )
             if self._is_cancelled():
                 return
@@ -390,12 +423,7 @@ class ProjectLoadWorker(QObject):
                     metadata,
                     project_root,
                     cancel_check=self._cancel_requested,
-                    progress=lambda done, total: self.progress.emit(
-                        2,
-                        total_steps,
-                        f"Loading preview media... "
-                        f"({done}/{total})",
-                    ),
+                    progress=self._media_progress(_JSON_PROGRESS_MEDIA),
                 )
             except OperationCancelled:
                 self.cancelled.emit()
@@ -407,7 +435,9 @@ class ProjectLoadWorker(QObject):
                 media = None
         else:
             self.progress.emit(
-                2, total_steps, f"Loading {path.name}..."
+                _PROGRESS_TOTAL,
+                _PROGRESS_TOTAL,
+                f"Loading {path.name}...",
             )
 
         result = {
@@ -427,6 +457,28 @@ class ProjectLoadWorker(QObject):
     # -----------------------------------------------------------------
     # Internal Helpers
     # -----------------------------------------------------------------
+
+    def _media_progress(self, start: int):
+        """Build the per-site progress callback for
+        :func:`load_project_media`.
+
+        Maps sites done onto the ``start``..``_PROGRESS_TOTAL`` span
+        so the bar keeps advancing through the media stage.
+
+        :param start: Bar value at the start of the media stage.
+        :return: ``Callable[[int, int], None]`` taking
+            ``(done, total)``.
+        """
+        span = _PROGRESS_TOTAL - start
+
+        def report(done: int, total: int) -> None:
+            self.progress.emit(
+                start + span * done // total,
+                _PROGRESS_TOTAL,
+                f"Loading preview media... ({done}/{total})",
+            )
+
+        return report
 
     def _is_cancelled(self) -> bool:
         """Check the cancellation flag and emit the cancelled

@@ -60,7 +60,8 @@ def load_project_media(
         per site; when it returns True, :class:`OperationCancelled`
         is raised (see :mod:`script_modules.cancellation`).
     :param progress: Optional ``Callable[[int, int], None]`` invoked
-        as ``(done, total)`` after each site, for progress reporting.
+        as ``(done, total)`` after each site (skipped ones included),
+        for progress reporting.
     :return: Mapping ``{site_name: {"left_qimage", "left_tooltip",
         "right_qimage", "right_tooltip", "atlas_array",
         "atlas_meta"}}``.  Sites without a name are skipped.
@@ -79,40 +80,52 @@ def load_project_media(
             raise OperationCancelled()
 
         site_name = site_data.get("SiteName", "")
-        if not site_name:
-            continue
-
-        directories = site_data.get("ImageDirectories", [])
-
-        left_path, _ = find_left_image(directories, project_root)
-        right_path, _ = find_right_image(directories, project_root)
-        left_qimage = (
-            load_preview_qimage(left_path, max_dim=thumb_max)
-            if left_path is not None else None
-        )
-        right_qimage = (
-            load_preview_qimage(right_path, max_dim=thumb_max)
-            if right_path is not None else None
-        )
-
-        atlas_array, atlas_meta = _load_atlas_data(
-            directories, project_root
-        )
-
-        result[site_name] = {
-            "left_qimage": left_qimage,
-            "left_tooltip": left_path.name if left_path else "",
-            "right_qimage": right_qimage,
-            "right_tooltip": right_path.name if right_path else "",
-            "atlas_array": atlas_array,
-            "atlas_meta": atlas_meta,
-        }
+        if site_name:
+            result[site_name] = _load_site_media(
+                site_data, project_root, thumb_max
+            )
 
         if progress is not None:
             progress(i + 1, total)
 
     logger.info(f"Preloaded media for {len(result)} site(s)")
     return result
+
+
+def _load_site_media(site_data, project_root, thumb_max):
+    """Decode the two preview thumbnails and the atlas data for one
+    site.
+
+    :param site_data: One ``Sites[]`` entry.
+    :param project_root: Absolute path to the project root.
+    :param thumb_max: Downsample cap for the preview thumbnails.
+    :return: The per-site media dict (see :func:`load_project_media`).
+    """
+    directories = site_data.get("ImageDirectories", [])
+
+    left_path, _ = find_left_image(directories, project_root)
+    right_path, _ = find_right_image(directories, project_root)
+    left_qimage = (
+        load_preview_qimage(left_path, max_dim=thumb_max)
+        if left_path is not None else None
+    )
+    right_qimage = (
+        load_preview_qimage(right_path, max_dim=thumb_max)
+        if right_path is not None else None
+    )
+
+    atlas_array, atlas_meta = _load_atlas_data(
+        directories, project_root
+    )
+
+    return {
+        "left_qimage": left_qimage,
+        "left_tooltip": left_path.name if left_path else "",
+        "right_qimage": right_qimage,
+        "right_tooltip": right_path.name if right_path else "",
+        "atlas_array": atlas_array,
+        "atlas_meta": atlas_meta,
+    }
 
 
 def _load_atlas_data(directories, project_root):

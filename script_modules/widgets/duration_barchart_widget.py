@@ -12,12 +12,16 @@ in execution order:
     5. Delay
 
 Hovering over a segment displays a tooltip with the segment name
-and duration. Total duration labels appear at the end of each bar.
+and duration, then the activities in that segment with their own
+durations (repeated activities labeled by run, e.g.
+``"Polishing 2 (2/3)"``). A segment holding an activity the site ran
+more than once is hatched, with a "Repeated activity" legend entry.
+Total duration labels appear at the end of each bar.
 
 Each site row also carries a drawn checkbox left of the site title,
 used to include or exclude the site from the Global Statistics
 selection; the site title itself is clickable and opens the same
-context menu as the bars. A labelled tri-state master checkbox
+context menu as the bars. A labeled tri-state master checkbox
 sits at the top of the checkbox column (solid = all checked,
 empty = none, dash = partial) and toggles the whole selection. The
 widget owns no selection truth: it reports user intent through
@@ -33,7 +37,7 @@ styled ``QGroupBox`` and follows the standard ``populate`` /
 """
 import logging
 from matplotlib.offsetbox import AnnotationBbox, DrawingArea
-from matplotlib.patches import FancyBboxPatch, Rectangle
+from matplotlib.patches import FancyBboxPatch, Patch, Rectangle
 from matplotlib.ticker import FuncFormatter
 from PySide6.QtWidgets import QMenu
 from PySide6.QtCore import Qt, Signal
@@ -42,6 +46,7 @@ from script_modules.app_styles import AppStyles
 from script_modules.consolidated_data_reader import (
     categorize_site_durations,
     format_seconds,
+    group_site_activities_by_segment,
 )
 from script_modules.widgets.styled_chart_widget import StyledChartWidget
 
@@ -66,6 +71,9 @@ _SEGMENT_ORDER = [
     "Thinning",
     "Delay",
 ]
+
+# Legend entry for the hatch over repeated-activity segments
+_REPEAT_LEGEND_LABEL = "Repeated activity"
 
 # Dynamic height: per-bar height + fixed padding for the title, the
 # horizontal legend band above the axes (which also hosts the master
@@ -145,11 +153,11 @@ class DurationBarChartWidget(StyledChartWidget):
     def populate(self, metadata: dict) -> None:
         """Build the bar chart from consolidated metadata.
 
-        Uses ``build_activity_step_map`` to categorise each
-        Statistics activity into its workflow step, then plots
-        stacked horizontal bars per site. Every row gets a drawn
-        checkbox (all checked by default); no selection signal is
-        emitted from here.
+        Groups each site's Statistics activities into the chart
+        segments (see ``group_site_activities_by_segment``), then
+        plots stacked horizontal bars per site. Every row gets a
+        drawn checkbox (all checked by default); no selection signal
+        is emitted from here.
 
         :param metadata: Consolidated metadata dictionary.
         """
@@ -166,6 +174,9 @@ class DurationBarChartWidget(StyledChartWidget):
         site_names: list[str] = []
         # Each entry is a dict: {segment_key: seconds}
         site_segments: list[dict[str, int]] = []
+        # Each entry is a dict: {segment_key: [SegmentActivity, ...]}
+        # (the tooltip list, and the repeated-activity hatch)
+        site_activities: list[dict] = []
 
         for site in reversed(sites):
             name = site.get("SiteName", "Unknown")
@@ -181,6 +192,9 @@ class DurationBarChartWidget(StyledChartWidget):
 
             site_names.append(name)
             site_segments.append(segments)
+            site_activities.append(
+                group_site_activities_by_segment(site)
+            )
 
         # -- Plot -----------------------------------------------------
         self.ax.clear()
@@ -195,6 +209,12 @@ class DurationBarChartWidget(StyledChartWidget):
         bar_height = 0.5
 
         _seg_index = {k: i for i, k in enumerate(_SEGMENT_ORDER)}
+
+        # Legend proxies, one per drawn segment layer (plus the hatch
+        # entry below when any segment is hatched)
+        legend_handles: list[Patch] = []
+        legend_labels: list[str] = []
+        any_hatched = False
 
         # Draw each segment layer
         for seg_key in _SEGMENT_ORDER:
@@ -214,22 +234,25 @@ class DurationBarChartWidget(StyledChartWidget):
                 )
                 lefts.append(left_s / 60)
 
-            self.ax.barh(
+            bars = self.ax.barh(
                 y_positions,
                 values_min,
                 height=bar_height,
                 left=lefts,
                 color=_COLORS[seg_key],
-                label=seg_key,
                 zorder=1,
             )
+            legend_handles.append(Patch(facecolor=_COLORS[seg_key]))
+            legend_labels.append(seg_key)
 
-            # Store segment rectangles for hover hit-testing
+            # Store segment rectangles for hover hit-testing, and
+            # hatch the segments holding a repeated activity
             for i, (left, width) in enumerate(
                 zip(lefts, values_min)
             ):
                 if width <= 0:
                     continue
+                activities = site_activities[i][seg_key]
                 self._segment_rects.append({
                     "y_index": i,
                     "left": left,
@@ -238,7 +261,19 @@ class DurationBarChartWidget(StyledChartWidget):
                     "y_top": i + bar_height / 2,
                     "label": seg_key,
                     "seconds": site_segments[i][seg_key],
+                    "activities": activities,
                 })
+                if any(a.run_count > 1 for a in activities):
+                    self._hatch_patch(bars.patches[i])
+                    any_hatched = True
+
+        if any_hatched:
+            swatch = Patch(
+                facecolor=AppStyles.Colors.PLOT_REPEAT_HATCH_SWATCH_BG
+            )
+            self._hatch_patch(swatch)
+            legend_handles.append(swatch)
+            legend_labels.append(_REPEAT_LEGEND_LABEL)
 
         # -- Total duration labels at bar ends ------------------------
         totals_min = [
@@ -278,9 +313,14 @@ class DurationBarChartWidget(StyledChartWidget):
         self._create_master_checkbox()
 
         # -- Title and legend ------------------------------------------
-        # Legend entries auto-collect from the labelled barh calls;
-        # all-zero segments were skipped above, so they get none.
-        self._set_title_and_top_legend("Site Durations")
+        # Proxy patches rather than the bars themselves: a hatched
+        # first row must not become the step's swatch.  All-zero
+        # segments were skipped above, so they get no entry.
+        self._set_title_and_top_legend(
+            "Site Durations",
+            handles=legend_handles,
+            labels=legend_labels,
+        )
 
         # Pad x-axis so labels aren't clipped
         self.ax.set_xlim(0, x_max * 1.18 if x_max > 0 else 1)
@@ -293,7 +333,7 @@ class DurationBarChartWidget(StyledChartWidget):
         self.setMinimumHeight(dynamic_height)
 
         # Create hover annotation (hidden until mouseover)
-        self._create_annotation()
+        self._create_table_annotation()
 
         self.canvas.draw_idle()
         logger.info(
@@ -306,6 +346,17 @@ class DurationBarChartWidget(StyledChartWidget):
         self._annotation = None
         self._hover_rect = None
         self._clear_axes()
+
+    @staticmethod
+    def _hatch_patch(patch) -> None:
+        """Mark *patch* as holding a repeated activity.
+
+        The hatch draws in the patch's edge color; a zero line width
+        keeps the segment outline itself invisible.
+        """
+        patch.set_hatch(AppStyles.Dimensions.PLOT_REPEAT_HATCH)
+        patch.set_edgecolor(AppStyles.Colors.PLOT_REPEAT_HATCH_COLOR)
+        patch.set_linewidth(0)
 
     def set_site_selection(self, selected: set[str]) -> None:
         """Programmatically set the row checkbox states.
@@ -695,13 +746,25 @@ class DurationBarChartWidget(StyledChartWidget):
             QCursor(Qt.CursorShape.PointingHandCursor)
         )
 
-        # Build tooltip text
-        duration_str = format_seconds(hit["seconds"])
-        tooltip = f"{hit['label']}\n{duration_str}"
+        # Tooltip rows: the segment and its total, then a blank line
+        # and its activities, each with its own duration
+        rows = [(hit["label"], format_seconds(hit["seconds"]))]
+        if hit["activities"]:
+            rows.append(("", ""))
+            rows.extend(
+                (a.label, format_seconds(a.seconds))
+                for a in hit["activities"]
+            )
+        self._set_table_annotation_rows(rows)
 
-        # Position annotation at cursor
-        self._annotation.xy = (event.xdata, event.ydata)
-        self._annotation.set_text(tooltip)
+        # Position the box at the cursor.  The list can make it tall,
+        # so on the upper half of the axes it hangs below the cursor
+        # instead of rising above it and off the canvas.
+        y_min, y_max = self.ax.get_ylim()
+        self._place_table_annotation(
+            event.xdata, event.ydata,
+            below=event.ydata > (y_min + y_max) / 2,
+        )
         self._annotation.set_visible(True)
 
         # Position highlight rectangle around the segment

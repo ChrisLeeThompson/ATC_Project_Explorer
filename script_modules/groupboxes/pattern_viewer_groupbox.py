@@ -34,7 +34,14 @@ activity patterns are drawn as vertical rectangles
 
 Activities with separate front and rear patterns (e.g. Rough
 Milling) produce distinct entries with ``"(Front)"`` or
-``"(Rear)"`` suffixed to the activity name.
+``"(Rear)"`` suffixed to the activity name.  An activity the site
+ran more than once produces one entry per run, labeled
+``"Polishing 2 (2/3)"`` and paired with that run's duration; when
+the pattern data has no run tags (e.g. a JSON file saved by an
+earlier version), the single entry is labeled
+``"Polishing 2 (x3)"`` with the runs' total duration.
+Each entry carries ``base_name`` and ``side`` fields for lookups
+and drawing, so ``activity_name`` is purely the display label.
 """
 import logging
 import math
@@ -48,8 +55,12 @@ from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QCursor
 from script_modules.app_styles import AppStyles
 from script_modules.consolidated_data_reader import (
     build_activity_step_map,
+    format_run_label,
+    group_activity_durations,
 )
 from script_modules.value_utils import (
+    format_seconds,
+    parse_duration_to_seconds,
     parse_numeric_value,
     to_micrometres,
 )
@@ -122,42 +133,50 @@ def _search_activity(obj, target_name: str) -> dict | None:
     return None
 
 
-def _strip_front_rear_suffix(name: str) -> str:
-    """Remove ``" (Front)"`` or ``" (Rear)"`` suffix from an
-    activity name to get the base name for recipe/statistics
-    lookups.
+def _run_label_and_duration(
+    activity_name: str,
+    pattern_entry: dict,
+    durations: list[str],
+) -> tuple[str, str]:
+    """Label a pattern entry by run and pick its duration.
 
-    :param name: Activity name, possibly with suffix.
-    :return: Base activity name.
+    Three cases:
+
+    - The parser split the activity into runs (``RunIndex`` /
+      ``RunCount`` present): ``"Polishing 2 (2/3)"`` with that
+      run's duration from Statistics.
+    - Statistics list several runs but the entry is unsplit (a
+      JSON file without run tags, or images that could not be
+      matched to runs): ``"Polishing 2 (x3)"`` with the runs'
+      total duration.
+    - A single run: the name and its duration.
+
+    :param activity_name: Activity name from PatternData.
+    :param pattern_entry: The PatternData dict.
+    :param durations: The activity's duration strings from
+        Statistics, in run order.
+    :return: ``(label, duration)``.
     """
-    for suffix in (" (Front)", " (Rear)"):
-        if name.endswith(suffix):
-            return name[: -len(suffix)]
-    return name
+    run_index = pattern_entry.get("RunIndex")
+    run_count = pattern_entry.get("RunCount")
+    if run_index is not None and run_count is not None:
+        label = format_run_label(activity_name, run_index, run_count)
+        duration = (
+            durations[run_index - 1]
+            if 0 < run_index <= len(durations) else _NA
+        )
+        return label, duration
 
+    if len(durations) > 1:
+        total = sum(
+            parse_duration_to_seconds(d) or 0 for d in durations
+        )
+        return (
+            f"{activity_name} (x{len(durations)})",
+            f"{format_seconds(total)} ({len(durations)} runs)",
+        )
 
-def _find_duration(
-    statistics: dict, activity_name: str,
-) -> str:
-    """Find the duration string for an activity from Statistics.
-
-    Tries the exact name first, then strips any (Front)/(Rear)
-    suffix to match the base activity name.
-
-    :param statistics: The ``Statistics`` dict from site data.
-    :param activity_name: Activity name to match.
-    :return: Duration string (e.g. ``"00:07:24"``) or ``"N/A"``.
-    """
-    for entry in statistics.get("Activities", []):
-        if entry.get("ActivityName") == activity_name:
-            return entry.get("Duration", _NA)
-    # Try base name without front/rear suffix
-    base_name = _strip_front_rear_suffix(activity_name)
-    if base_name != activity_name:
-        for entry in statistics.get("Activities", []):
-            if entry.get("ActivityName") == base_name:
-                return entry.get("Duration", _NA)
-    return _NA
+    return activity_name, (durations[0] if durations else _NA)
 
 
 def _format_value(raw) -> str:
@@ -214,19 +233,9 @@ def _format_um_rounded(raw, decimals: int = 2) -> str:
     return f"{round(um, decimals)} µm"
 
 
-def _is_stress_relief(activity_name: str) -> bool:
-    """Check if an activity name refers to stress relief cuts."""
-    return "stress relief" in activity_name.lower()
-
-
-def _is_front_pattern(activity_name: str) -> bool:
-    """Check if an activity name is a front-only pattern."""
-    return activity_name.endswith("(Front)")
-
-
-def _is_rear_pattern(activity_name: str) -> bool:
-    """Check if an activity name is a rear-only pattern."""
-    return activity_name.endswith("(Rear)")
+def _is_stress_relief(entry: dict) -> bool:
+    """Check if a display entry is a stress relief cut."""
+    return "stress relief" in entry.get("base_name", "").lower()
 
 
 def _rect_with_um(
@@ -280,6 +289,9 @@ def _build_display_entries(site_data: dict) -> list[dict]:
     site_pd = site_data.get("SiteProjectData", {})
     statistics = site_data.get("Statistics", {})
     step_map = build_activity_step_map(site_pd)
+    durations_by_name = group_activity_durations(
+        statistics.get("Activities", [])
+    )
 
     # Lamella parameters
     params = site_pd.get("Parameters", {})
@@ -295,12 +307,14 @@ def _build_display_entries(site_data: dict) -> list[dict]:
     entries: list[dict] = []
 
     for pd in pattern_data:
-        activity_name = pd.get("ActivityName", "")
-        if not activity_name:
+        base_name = pd.get("ActivityName", "")
+        if not base_name:
             continue
 
-        # Strip suffix for recipe lookup
-        base_name = _strip_front_rear_suffix(activity_name)
+        # Display label (with run marker) and this run's duration
+        run_label, duration = _run_label_and_duration(
+            base_name, pd, durations_by_name.get(base_name, [])
+        )
 
         # Find matching recipe activity for extra fields
         recipe_act = _find_activity_in_recipes(
@@ -424,9 +438,6 @@ def _build_display_entries(site_data: dict) -> list[dict]:
             if isinstance(dcm_params, dict) else None
         )
 
-        # Duration from statistics
-        duration = _find_duration(statistics, activity_name)
-
         # Check for front/rear trench heights in recipe
         # (e.g. Rough Milling has FrontTrenchHeight and
         # RearTrenchHeight with different values).
@@ -443,6 +454,8 @@ def _build_display_entries(site_data: dict) -> list[dict]:
         # Common fields shared by both single and split entries
         common = {
             "is_lamella": False,
+            "base_name": base_name,
+            "side": "",
             "workflow_step": workflow_step,
             "color": color,
             "pattern_type": pattern_type,
@@ -470,9 +483,8 @@ def _build_display_entries(site_data: dict) -> list[dict]:
             # Split into front and rear entries.
             # Front entry: front overlaps, front height if available.
             front_entry = dict(common)
-            front_entry["activity_name"] = (
-                f"{activity_name} (Front)"
-            )
+            front_entry["activity_name"] = f"{run_label} (Front)"
+            front_entry["side"] = "front"
             front_entry["front_left_overlap"] = front_left_overlap
             front_entry["front_right_overlap"] = front_right_overlap
             front_entry["rear_left_overlap"] = _NA
@@ -503,9 +515,8 @@ def _build_display_entries(site_data: dict) -> list[dict]:
 
             # Rear entry: rear overlaps, rear height if available.
             rear_entry = dict(common)
-            rear_entry["activity_name"] = (
-                f"{activity_name} (Rear)"
-            )
+            rear_entry["activity_name"] = f"{run_label} (Rear)"
+            rear_entry["side"] = "rear"
             rear_entry["front_left_overlap"] = _NA
             rear_entry["front_right_overlap"] = _NA
             rear_entry["rear_left_overlap"] = rear_left_overlap
@@ -536,7 +547,7 @@ def _build_display_entries(site_data: dict) -> list[dict]:
         else:
             # Single entry — no overlaps or all zeros
             entries.append({
-                "activity_name": activity_name,
+                "activity_name": run_label,
                 "height": rect_height,
                 "front_left_overlap": front_left_overlap,
                 "front_right_overlap": front_right_overlap,
@@ -552,6 +563,8 @@ def _build_display_entries(site_data: dict) -> list[dict]:
     # Append a lamella entry at the end
     entries.append({
         "activity_name": "Lamella",
+        "base_name": "Lamella",
+        "side": "",
         "is_lamella": True,
         "workflow_step": "",
         "color": _LAMELLA_COLOR,
@@ -940,9 +953,8 @@ class PatternCanvasWidget(QWidget):
         for entry in self._entries:
             if entry.get("is_lamella"):
                 continue
-            name = entry.get("activity_name", "")
 
-            if _is_stress_relief(name):
+            if _is_stress_relief(entry):
                 # Horizontal: width extends outward
                 trench_off = entry.get("trench_offset_um", 0.0)
                 for rect in entry.get("rectangles", []):
@@ -1107,9 +1119,7 @@ class PatternCanvasWidget(QWidget):
         is_selected: bool,
     ) -> None:
         """Draw pattern rectangles for one activity entry."""
-        name = entry.get("activity_name", "")
-
-        if _is_stress_relief(name):
+        if _is_stress_relief(entry):
             self._draw_stress_relief(
                 painter, entry, entry_index,
                 cx, cy, scale, is_selected,
@@ -1127,10 +1137,10 @@ class PatternCanvasWidget(QWidget):
     ) -> None:
         """Draw regular (above/below) pattern rectangles.
 
-        For entries with a ``"(Front)"`` suffix, only the front
-        (above) rectangle is drawn.  For ``"(Rear)"``, only the
-        rear (below).  Otherwise both front and rear are drawn
-        with the same dimensions.
+        For entries whose ``side`` is ``"front"``, only the front
+        (above) rectangle is drawn; for ``"rear"``, only the rear
+        (below).  Otherwise both front and rear are drawn with the
+        same dimensions.
 
         Dashed vertical lines are drawn at the lamella edge
         positions to indicate the width overlap zones.
@@ -1148,9 +1158,9 @@ class PatternCanvasWidget(QWidget):
 
         line_width = 2.0 if is_selected else 1.0
         alpha = 180 if is_selected else 60
-        name = entry.get("activity_name", "")
-        draw_front = not _is_rear_pattern(name)
-        draw_rear = not _is_front_pattern(name)
+        side = entry.get("side", "")
+        draw_front = side != "rear"
+        draw_rear = side != "front"
 
         # Check if overlaps exist for drawing indicators
         has_overlaps = (

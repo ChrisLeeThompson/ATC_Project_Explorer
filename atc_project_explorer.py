@@ -330,16 +330,16 @@ class MainWindow(QMainWindow):
 
     @Slot(int, int, str)
     def _on_worker_progress(
-        self, step: int, total: int, description: str
+        self, value: int, maximum: int, description: str
     ) -> None:
         """Update the progress bar and status message.
 
-        :param step: Current step number (1-based).
-        :param total: Total number of steps.
-        :param description: Human-readable description of the step.
+        :param value: Overall load progress, from 0 to ``maximum``.
+        :param maximum: Progress value that means loading is complete.
+        :param description: Human-readable description of the stage.
         """
-        self.status_bar.set_progress_bar_range(0, total)
-        self.status_bar.set_progress_bar_value(step)
+        self.status_bar.set_progress_bar_range(0, maximum)
+        self.status_bar.set_progress_bar_value(value)
         self.status_bar.set_status_bar_message(description)
 
     @Slot(dict)
