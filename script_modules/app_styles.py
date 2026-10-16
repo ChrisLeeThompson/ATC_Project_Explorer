@@ -18,6 +18,23 @@ ICON_PATH = ASSETS_DIR / "catbug_waiting_color.png"
 
 
 # =====================================================================
+# Color Helpers
+# =====================================================================
+
+def _rgba(hex_color: str, alpha: float) -> str:
+    """Convert a ``#rrggbb`` color and an opacity to a QSS color.
+
+    :param hex_color: Color token in ``#rrggbb`` form.
+    :param alpha: Opacity from 0 (transparent) to 1 (opaque).
+    :return: CSS string such as ``"rgba(39, 57, 69, 217)"``.
+    """
+    red, green, blue = (
+        int(hex_color[i:i + 2], 16) for i in (1, 3, 5)
+    )
+    return f"rgba({red}, {green}, {blue}, {round(alpha * 255)})"
+
+
+# =====================================================================
 # Scrollbar Style Helpers
 # =====================================================================
 
@@ -127,7 +144,26 @@ class StyleColors:
     IMAGE_VIEWER_CROSSHAIR_COLOR = "#00CEC8"
     SITE_POSITION_PLOT_MARKER_COLOR = "#2EA2EC"
     SITE_POSITION_PLOT_MARKER_EDGE_COLOR = "#ffffff"
-    SCALE_BAR_COLOR = "#8498a4"
+    # Canvas overlays (scale bar, reset-view button): white marks on a
+    # translucent plate (alpha: StyleDimensions.CANVAS_PLATE_ALPHA) so
+    # they stay legible over any image.
+    CANVAS_PLATE_COLOR = MAIN_BG
+    SCALE_BAR_COLOR = TEXT_PRIMARY
+    # Image Viewer ruler: the pattern blue (also the checked ruler
+    # button's fill) over a thin dark edge, with a white label.
+    RULER_COLOR = "#2EA2EC"
+    RULER_EDGE_COLOR = INPUT_BORDER
+    RULER_LABEL_COLOR = TEXT_PRIMARY
+    # Image Viewer histogram: drawn like the Pattern Viewer's unselected
+    # patterns (blue line and translucent fill), with white level lines
+    # that stand out as the part you can drag.  The plot area matches
+    # the image canvas.
+    HISTOGRAM_BG = MAIN_BG
+    HISTOGRAM_FIGURE_BG = GROUPBOX_BG
+    HISTOGRAM_TRACE_COLOR = PLOT_MILLING_BAR_COLOR
+    HISTOGRAM_LEVEL_LINE_COLOR = TEXT_PRIMARY
+    HISTOGRAM_VALUE_TEXT_COLOR = TEXT_PRIMARY
+    HISTOGRAM_VALUE_BOX_BG = INPUT_BG
 
 
 class StyleDimensions:
@@ -221,13 +257,38 @@ class StyleDimensions:
     COLLAPSIBLE_HANDLE_WIDTH = 10
     COLLAPSIBLE_ARROW_SIZE = 4
     COLLAPSIBLE_ARROW_PEN_WIDTH = 1.5
-    # Scale bar dimensions (Pattern Viewer overlay)
+    # Canvas overlays (scale bar plate, reset-view button): inset from
+    # the canvas corner, and the plate's opacity (0-1).
+    CANVAS_OVERLAY_INSET = 8
+    CANVAS_PLATE_ALPHA = 0.85
+    CANVAS_OVERLAY_BUTTON_GAP = 8  # between stacked corner buttons
+    # Scale bar dimensions (Pattern Viewer and Image Viewer overlay)
     SCALE_BAR_TARGET_PX = 100
-    SCALE_BAR_MARGIN = 12
     SCALE_BAR_CAP_HEIGHT = 6
     SCALE_BAR_LABEL_PAD = 4
     SCALE_BAR_LINE_WIDTH = 2
     SCALE_BAR_LABEL_FONT_SIZE = 11
+    SCALE_BAR_PLATE_PADDING = 6
+    SCALE_BAR_PLATE_RADIUS = 4
+    # Image Viewer ruler (widget pixels); the label reuses the scale
+    # bar's font size, plate padding, and plate radius.
+    RULER_LINE_WIDTH = 2
+    RULER_EDGE_WIDTH = 4  # dark line beneath: 1 px shows on each side
+    RULER_HANDLE_RADIUS = 4
+    RULER_LABEL_BORDER_WIDTH = 1
+    RULER_HIT_RADIUS_PX = 12
+    # Image Viewer histogram panel (font sizes in points at
+    # PLOT_NOMINAL_DPI; the hit radius in pixels)
+    HISTOGRAM_PANEL_MINIMUM_WIDTH = 220  # also the width it opens at
+    HISTOGRAM_TRACE_WIDTH = PLOT_LINE_WIDTH
+    HISTOGRAM_FILL_ALPHA = 60 / 255  # an unselected pattern's fill
+    HISTOGRAM_LEVEL_LINE_WIDTH = 1.2
+    HISTOGRAM_TICK_LABEL_SIZE = 8
+    HISTOGRAM_VALUE_FONT_SIZE = 8
+    HISTOGRAM_VALUE_BOX_PAD = 0.25
+    HISTOGRAM_VALUE_BOX_EDGE_WIDTH = 0.8
+    HISTOGRAM_PLACEHOLDER_FONT_SIZE = 9
+    HISTOGRAM_HIT_RADIUS_PX = 12
 
 
 class StyleFonts:
@@ -259,6 +320,8 @@ class ApplicationText:
     )
 
     IMAGE_NAME_LINK = "Open containing directory."
+
+    RULER_BUTTON = "Measure a distance. Toggle off to clear."
 
 
 class ToolTips:
@@ -697,9 +760,15 @@ class ButtonStyles:
     
     @staticmethod
     def reset_view() -> str:
+        # Rest state sits on the same translucent plate as the scale
+        # bar so the button stays visible over a zoomed-in image.
+        plate = _rgba(
+            StyleColors.CANVAS_PLATE_COLOR,
+            StyleDimensions.CANVAS_PLATE_ALPHA,
+        )
         return f"""
             QPushButton {{
-                background-color: transparent;
+                background-color: {plate};
                 color: {StyleColors.TEXT_DISABLED};
                 border: none;
                 border-radius: {StyleDimensions.BORDER_RADIUS_SMALL};
@@ -715,6 +784,31 @@ class ButtonStyles:
             QPushButton:pressed {{
                 background-color: {StyleColors.BUTTON_PRESSED};
                 color: {StyleColors.TEXT_PRIMARY};
+            }}
+        """
+
+    @staticmethod
+    def canvas_toggle() -> str:
+        # A checkable reset_view(): the checked state takes the accent
+        # fill of a checked checkbox.  The rules come after the base
+        # ones so the cascade favors them, and the disabled rule comes
+        # last so a checked button shows the plate while disabled.
+        plate = _rgba(
+            StyleColors.CANVAS_PLATE_COLOR,
+            StyleDimensions.CANVAS_PLATE_ALPHA,
+        )
+        return ButtonStyles.reset_view() + f"""
+            QPushButton:checked {{
+                background-color: {StyleColors.BUTTON_HOVER};
+            }}
+            QPushButton:checked:hover {{
+                background-color: {StyleColors.BUTTON_HOVER};
+            }}
+            QPushButton:checked:pressed {{
+                background-color: {StyleColors.BUTTON_PRESSED};
+            }}
+            QPushButton:disabled {{
+                background-color: {plate};
             }}
         """
 

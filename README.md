@@ -12,7 +12,7 @@ Full documentation: https://chrisleethompson.github.io/scripts/atc_project_explo
 ## Features
 
 - **Site explorer** with per-site statistics, parameters, and preview images.
-- **Image viewer** that browses a site's image directories with previous/next navigation, scroll-wheel zoom, opacity cross-fade between images, and an image-metadata tree.
+- **Image viewer** that browses a site's image directories with previous/next navigation, scroll-wheel zoom with a scale bar, a ruler for measuring distances, opacity cross-fade between images, a histogram with adjustable black and white levels, and an image-metadata tree.
 - **Pattern viewer** showing the relative sizes of the patterns used for a site along with their parameters, with one entry per run for activities a site ran more than once.
 - **Global statistics** with mean durations per workflow step and per activity, for all sites or a checked subset.
 - **Site-position atlas** with a scatter map of site locations and an image montage; click a marker to open that site.

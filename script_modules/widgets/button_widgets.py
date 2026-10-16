@@ -3,7 +3,7 @@ Module for styled button widgets.
 """
 from PySide6.QtWidgets import QPushButton
 from PySide6.QtGui import QIcon
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Qt
 from script_modules.app_styles import AppStyles, ASSETS_DIR
 
 
@@ -66,15 +66,38 @@ class NextButton(StyledButton):
 
 
 class ResetViewButton(QPushButton):
+    """Icon button floated over a canvas that resets its view."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        icon_path = str(ASSETS_DIR / "reset_view_light-gray.svg")
+        icon_path = str(ASSETS_DIR / "reset_view_white.svg")
         self.setIcon(QIcon(icon_path))
         self.setIconSize(QSize(24, 24))
         self.setFixedSize(32, 32)
+        # The canvas shows a cross cursor while its ruler is on; the
+        # button keeps the arrow.
+        self.setCursor(Qt.CursorShape.ArrowCursor)
         self.setToolTip("Reset the view.")
         self.setStyleSheet(AppStyles.Button.reset_view() + AppStyles.AppToolTips.default())
+
+
+class RulerButton(QPushButton):
+    """Checkable icon button floated over the Image Viewer's canvas
+    that turns the ruler tool on; checked, it takes the accent fill.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        icon_path = str(ASSETS_DIR / "ruler_white.svg")
+        self.setIcon(QIcon(icon_path))
+        self.setIconSize(QSize(24, 24))
+        self.setFixedSize(32, 32)
+        self.setCursor(Qt.CursorShape.ArrowCursor)
+        self.setToolTip(AppStyles.AppText.RULER_BUTTON)
+        self.setStyleSheet(
+            AppStyles.Button.canvas_toggle() + AppStyles.AppToolTips.default()
+        )
 
 
 class PatternToggleButton(QPushButton):

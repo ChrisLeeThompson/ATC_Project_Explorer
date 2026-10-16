@@ -44,7 +44,6 @@ Each entry carries ``base_name`` and ``side`` fields for lookups
 and drawing, so ``activity_name`` is purely the display label.
 """
 import logging
-import math
 from PySide6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QGridLayout,
     QWidget, QLabel, QSizePolicy, QSplitter,
@@ -68,6 +67,7 @@ from script_modules.widgets.button_widgets import (
     PatternToggleButton,
     ResetViewButton,
 )
+from script_modules.widgets.scale_bar import draw_scale_bar
 
 
 logger = logging.getLogger(__name__)
@@ -935,7 +935,7 @@ class PatternCanvasWidget(QWidget):
             )
 
         # Scale bar (widget-coordinate overlay, after all geometry)
-        self._draw_scale_bar(painter, scale)
+        draw_scale_bar(painter, self.height(), scale)
 
         painter.end()
 
@@ -1011,107 +1011,6 @@ class PatternCanvasWidget(QWidget):
         self._hit_map.append(
             (entry_index, QRectF(rx, ry, rw, rh))
         )
-
-    def _draw_scale_bar(
-        self, painter: QPainter, scale: float,
-    ) -> None:
-        """Draw a microscopy scale bar in the bottom-left corner.
-
-        The bar's physical length adapts to the current scale
-        (zoom-aware) by snapping to a 1/2/5 × 10^n "nice" value
-        whose drawn length is closest to
-        :attr:`AppStyles.Dimensions.SCALE_BAR_TARGET_PX`.  The
-        bar is drawn in widget coordinates so it stays anchored
-        to the corner regardless of pan.
-
-        :param painter: Active QPainter on this widget.
-        :param scale: Effective pixels-per-µm at current zoom
-            (``base_scale * self._zoom``, the value used to draw
-            patterns and the lamella in this paint pass).
-        """
-        if scale <= 0:
-            return
-
-        # Choose the nicest physical length whose drawn width is
-        # close to the target pixel count.
-        target_px = AppStyles.Dimensions.SCALE_BAR_TARGET_PX
-        desired_um = target_px / scale
-        nice_um = self._nice_number_125(desired_um)
-        bar_px = nice_um * scale
-
-        # Format label using microscopy convention: µm at >= 1 µm,
-        # otherwise nm.
-        if nice_um >= 1.0:
-            label = f"{nice_um:g} µm"
-        else:
-            label = f"{nice_um * 1000:g} nm"
-
-        # Anchor: bottom-left.  y is the centerline of the bar.
-        margin = AppStyles.Dimensions.SCALE_BAR_MARGIN
-        x0 = margin
-        x1 = margin + bar_px
-        y = self.height() - margin
-
-        color = QColor(AppStyles.Colors.SCALE_BAR_COLOR)
-        painter.setPen(
-            QPen(color, AppStyles.Dimensions.SCALE_BAR_LINE_WIDTH)
-        )
-
-        # Main horizontal bar
-        painter.drawLine(int(x0), int(y), int(x1), int(y))
-
-        # End caps (short vertical lines)
-        cap_half = AppStyles.Dimensions.SCALE_BAR_CAP_HEIGHT / 2
-        painter.drawLine(
-            int(x0), int(y - cap_half),
-            int(x0), int(y + cap_half),
-        )
-        painter.drawLine(
-            int(x1), int(y - cap_half),
-            int(x1), int(y + cap_half),
-        )
-
-        # Label, centered above the bar.  Set the font size from
-        # AppStyles before measuring so horizontalAdvance() reflects
-        # the actual rendered width.  This is the last drawing in
-        # paintEvent, so we don't restore the painter's prior font.
-        font = painter.font()
-        font.setPointSize(
-            AppStyles.Dimensions.SCALE_BAR_LABEL_FONT_SIZE
-        )
-        painter.setFont(font)
-        fm = painter.fontMetrics()
-        label_w = fm.horizontalAdvance(label)
-        label_x = int((x0 + x1) / 2 - label_w / 2)
-        label_y = int(
-            y - cap_half
-            - AppStyles.Dimensions.SCALE_BAR_LABEL_PAD
-        )
-        painter.drawText(label_x, label_y, label)
-
-    @staticmethod
-    def _nice_number_125(value: float) -> float:
-        """Round *value* to the nearest 1/2/5 × 10^n.
-
-        Standard microscopy scale-bar snap: produces values like
-        0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, ...
-
-        :param value: A positive physical length in µm.
-        :return: The nearest 1/2/5 nice number.
-        """
-        if value <= 0:
-            return 1.0
-        exp = math.floor(math.log10(value))
-        base = value / (10 ** exp)
-        if base < 1.5:
-            nice = 1.0
-        elif base < 3.5:
-            nice = 2.0
-        elif base < 7.5:
-            nice = 5.0
-        else:
-            nice = 10.0
-        return nice * (10 ** exp)
 
     def _draw_entry(
         self, painter: QPainter, entry: dict, entry_index: int,
@@ -1686,7 +1585,7 @@ class PatternViewerGroupBox(QGroupBox):
     def _position_reset_button(self) -> None:
         """Pin the reset-view button to the bottom-right corner
         of the canvas with a small inset margin."""
-        margin = 8
+        margin = AppStyles.Dimensions.CANVAS_OVERLAY_INSET
         btn = self._reset_view_button
         x = self._canvas.width() - btn.width() - margin
         y = self._canvas.height() - btn.height() - margin

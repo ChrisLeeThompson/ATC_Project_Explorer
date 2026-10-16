@@ -53,6 +53,7 @@ from script_modules.preview_image_helpers import (
 )
 from script_modules.parsers.image_metadata_parser import (
     extract_image_metadata,
+    pixel_size_from_xml,
 )
 from script_modules.widgets.styled_chart_widget import StyledChartWidget
 
@@ -423,28 +424,15 @@ class SitePositionPlotWidget(StyledChartWidget):
         """Extract pixel size (X, Y) in metres from
         ``XMLMetadata.BinaryResult.PixelSize``.
 
-        The FEI XML schema stores pixel size with XML attributes
-        (``unit``, ``unitPrefixPower``), causing the parser to
-        produce a dict like
-        ``{"unit": "m", "_text": "6.48E-07"}`` rather than
-        a plain numeric value.  Uses :func:`extract_numeric` to
-        handle both forms.
+        Delegates to :func:`pixel_size_from_xml`, which handles both
+        the attributed (dict) and plain numeric value forms.
 
         :param xml_meta: The ``XMLMetadata`` dictionary from
             ``extract_image_metadata``.
-        :return: ``(pixel_size_x_m, pixel_size_y_m)`` or *None*.
+        :return: ``(pixel_size_x_m, pixel_size_y_m)``, or *None* when
+            missing or not positive.
         """
-        pixel_size = (
-            xml_meta.get("BinaryResult", {})
-            .get("PixelSize", {})
-        )
-        if not isinstance(pixel_size, dict):
-            return None
-        x_val = extract_numeric(pixel_size.get("X"))
-        y_val = extract_numeric(pixel_size.get("Y"))
-        if x_val is not None and y_val is not None:
-            return x_val, y_val
-        return None
+        return pixel_size_from_xml(xml_meta)
 
     @staticmethod
     def _extract_image_size(

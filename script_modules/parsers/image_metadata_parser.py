@@ -37,6 +37,10 @@ For batch XML-only extraction (e.g. pattern data parsing)::
     )
 
     xml_only = extract_xml_metadata(Path("path/to/image.png"))
+
+For the pixel size of a parsed image, in metres::
+
+    pixel_size = extract_pixel_size_m(metadata)  # (x, y) or None
 """
 import logging
 import os
@@ -46,6 +50,8 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib.image as mpimg
+
+from script_modules.value_utils import extract_numeric
 
 
 logger = logging.getLogger(__name__)
@@ -176,6 +182,64 @@ def extract_xml_metadata(
         image_path, raw_bytes=raw_bytes
     )
     return embedded
+
+
+def extract_pixel_size_m(metadata: dict) -> tuple[float, float] | None:
+    """Return an image's pixel size in metres.
+
+    Reads ``XMLMetadata`` › ``BinaryResult`` › ``PixelSize``, which
+    every FEI-generated PNG and TIF carries, and falls back to the TIF
+    key-value metadata (tag 34682) ``Scan`` › ``PixelWidth`` /
+    ``PixelHeight``.
+
+    :param metadata: Metadata dict from :func:`extract_image_metadata`.
+    :return: ``(pixel_size_x_m, pixel_size_y_m)``, or *None* when no
+        positive pixel size is recorded.
+    """
+    xml = metadata.get("XMLMetadata")
+    if isinstance(xml, dict):
+        size = pixel_size_from_xml(xml)
+        if size is not None:
+            return size
+
+    microscope = metadata.get("MicroscopeMetadata")
+    if isinstance(microscope, dict):
+        scan = microscope.get("Scan")
+        if isinstance(scan, dict):
+            return _positive_pair(
+                scan.get("PixelWidth"), scan.get("PixelHeight")
+            )
+    return None
+
+
+def pixel_size_from_xml(xml_metadata: dict) -> tuple[float, float] | None:
+    """Return the pixel size recorded in FEI XML metadata, in metres.
+
+    The values are attributed XML leaves (``unit``,
+    ``unitPrefixPower``), so the parser yields dicts like
+    ``{"unit": "m", "_text": "6.48E-07"}``; plain numbers are accepted
+    too.
+
+    :param xml_metadata: The ``XMLMetadata`` dict.
+    :return: ``(pixel_size_x_m, pixel_size_y_m)``, or *None* when the
+        pixel size is missing or not positive.
+    """
+    binary_result = xml_metadata.get("BinaryResult")
+    if not isinstance(binary_result, dict):
+        return None
+    pixel_size = binary_result.get("PixelSize")
+    if not isinstance(pixel_size, dict):
+        return None
+    return _positive_pair(pixel_size.get("X"), pixel_size.get("Y"))
+
+
+def _positive_pair(x_value, y_value) -> tuple[float, float] | None:
+    """Coerce two metadata values to a pair of positive floats."""
+    x = extract_numeric(x_value)
+    y = extract_numeric(y_value)
+    if x is None or y is None or x <= 0 or y <= 0:
+        return None
+    return x, y
 
 
 # -----------------------------------------------------------------

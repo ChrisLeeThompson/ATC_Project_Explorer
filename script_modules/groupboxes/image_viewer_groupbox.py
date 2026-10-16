@@ -11,9 +11,13 @@ Layout::
     │   └── Searchable metadata tree (ImageInfo, MicroscopeMetadata,
     │       and XMLMetadata when the image carries embedded FEI XML)
     └── Right column (expanding):
-        ├── Image name + [Show graphics] + counter row
-        ├── ImageCanvasWidget (QPainter image display + overlay)
-        │   └── ResetViewButton floated bottom-right
+        ├── Image name + [Show graphics] + [Show histogram] + counter row
+        ├── QSplitter:
+        │   ├── ImageCanvasWidget (QPainter image display, graphics
+        │   │   overlay, ruler, and scale bar)
+        │   │   ├── RulerButton floated above the reset-view button
+        │   │   └── ResetViewButton floated bottom-right
+        │   └── HistogramGroupBox (shown with Show histogram)
         └── Button row: [Opacity] [slider] [Previous] [Next] [slider] [Opacity]
 
 The group box is populated with a site's ``ImageDirectories``
@@ -46,6 +50,43 @@ pan_y)`` state is preserved so the user can zoom in once and
 browse a directory without losing their view.  Switching
 directories explicitly resets the view.
 
+Scale Bar
+~~~~~~~~~
+
+Whenever the image records a pixel size (``BinaryResult`` ›
+``PixelSize``), the canvas draws a zoom-aware scale bar in its
+bottom-left corner (see ``widgets/scale_bar.py``).  It is independent
+of **Show graphics**, and during a cross-fade it describes the current
+image.
+
+Ruler
+~~~~~
+
+The ``RulerButton`` turns on a measuring tool for images with a pixel
+size (see ``widgets/ruler.py``).  While it is on, a click places the
+first point, a preview line follows the cursor, and a second click
+completes the ruler; a label at its midpoint shows the physical
+length.  Dragging an endpoint moves it, dragging the label moves the
+whole ruler, and Shift or Ctrl locks a placed or dragged endpoint to
+the horizontal or vertical.  Dragging anywhere else still pans.  The
+endpoints are kept in image pixels, so the line follows zoom and pan
+while the label stays the same.  There is one ruler at a time: it is
+erased when the image changes or the button is toggled off, while the
+button itself stays on across image changes.
+
+Histogram and Levels
+~~~~~~~~~~~~~~~~~~~~
+
+Images are loaded with their stored pixel values
+(``load_image_native``) and rendered through levels: a black point and
+a white point.  Each image starts with auto levels, its own value
+range.  Dragging a line on the histogram switches to Manual levels,
+which re-render the image (and any cross-faded neighbour) without
+resetting the view and carry across Previous/Next.  Picking a
+directory, selecting an image from a site preview, or the histogram's
+Reset returns to auto levels.  Levels change only the display, never
+the file, and color images always use auto levels.
+
 Graphics Overlay
 ~~~~~~~~~~~~~~~~
 
@@ -75,9 +116,10 @@ time.  This keeps zoom interactions cheap.
 import logging
 from pathlib import Path
 
+import numpy as np
 from PySide6.QtWidgets import (
-    QGroupBox, QVBoxLayout, QHBoxLayout, QSplitter, QWidget,
-    QLabel, QSizePolicy, QCheckBox, QSlider,
+    QApplication, QGroupBox, QVBoxLayout, QHBoxLayout, QSplitter,
+    QWidget, QLabel, QSizePolicy, QCheckBox, QSlider,
 )
 from PySide6.QtCore import Qt, QEvent, QRectF, QPointF, Slot, Signal
 from PySide6.QtGui import (
@@ -85,20 +127,26 @@ from PySide6.QtGui import (
 )
 from script_modules.app_styles import AppStyles
 from script_modules.value_utils import (
-    extract_numeric,
     parse_unit_value,
     to_metres,
 )
-from script_modules.image_utils import load_image, numpy_to_qpixmap
+from script_modules.image_utils import load_image_native, numpy_to_qpixmap
+from script_modules.groupboxes.histogram_groupbox import HistogramGroupBox
 from script_modules.widgets.combobox_widgets import ImageDirectoryComboBox
 from script_modules.widgets.button_widgets import (
-    PreviousButton, NextButton, ResetViewButton,
+    PreviousButton, NextButton, ResetViewButton, RulerButton,
 )
 from script_modules.widgets.searchable_tree_widget import SearchableTreePanel
 from script_modules.widgets.clickable_label import ClickableLabel
+from script_modules.widgets.ruler import (
+    Ruler, RulerState, ViewTransform, draw_ruler,
+)
+from script_modules.widgets.scale_bar import draw_scale_bar
 from script_modules.file_reveal import reveal_in_file_manager
 from script_modules.parsers.image_metadata_parser import (
     extract_image_metadata,
+    extract_pixel_size_m,
+    pixel_size_from_xml,
 )
 
 
@@ -128,19 +176,6 @@ _OVERLAY_ROTATION_SIGN = -1.0
 # -----------------------------------------------------------------
 # Pattern Overlay Helpers
 # -----------------------------------------------------------------
-
-def _extract_pixel_size_val(val) -> float | None:
-    """Extract a numeric ``PixelSize`` value (already in metres).
-
-    The XML parser produces either a plain float or a dict like
-    ``{"unit": "m", "_text": "7.8125E-08"}`` when the element has
-    XML attributes.
-
-    :param val: PixelSize X or Y value from parsed metadata.
-    :return: Value in metres, or *None*.
-    """
-    return extract_numeric(val)
-
 
 def _adjust_anchor_x(
     anchor_x_m: float, anchor_point: str, width_m: float,
@@ -313,11 +348,13 @@ class ImageCanvasWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # Content state
+        # Content state.  The pixel size (metres, X) sizes the scale
+        # bar; None leaves the bar off.
         self._pixmap: QPixmap | None = None
         self._overlay_data: dict | None = None
         self._overlay_visible: bool = False
         self._error_text: str | None = None
+        self._pixel_size_m: float | None = None
 
         # Cross-fade state: an optional neighbour image drawn beneath
         # the current one, revealed as the current image's opacity is
@@ -338,6 +375,17 @@ class ImageCanvasWidget(QWidget):
         self._drag_start_pan_x: float = 0.0
         self._drag_start_pan_y: float = 0.0
 
+        # Ruler state.  While the tool is on, a left press is routed by
+        # ``_press_mode``: "ruler" drags the ruler under the cursor,
+        # "maybe_pan" is undecided until the cursor moves past the drag
+        # threshold ("pan") or is released in place (a click that
+        # places a point).  The label rect is refreshed at paint time
+        # for hit-testing.
+        self._ruler: Ruler | None = None
+        self._ruler_enabled: bool = False
+        self._ruler_label_rect: QRectF | None = None
+        self._press_mode: str | None = None
+
         self.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Expanding,
@@ -357,6 +405,7 @@ class ImageCanvasWidget(QWidget):
         self,
         pixmap: QPixmap | None,
         overlay_data: dict | None,
+        pixel_size_m: float | None = None,
     ) -> None:
         """Display *pixmap* with optional overlay data.
 
@@ -368,11 +417,22 @@ class ImageCanvasWidget(QWidget):
         :param overlay_data: Dict with keys ``center_px`` (tuple
             of image pixels) and optional ``rectangles_image_px``
             (list of pre-transformed image-pixel rectangles).
+        :param pixel_size_m: Width of one image pixel in metres, for
+            the scale bar; *None* draws no scale bar.
         """
         self._pixmap = pixmap
         self._overlay_data = overlay_data
+        self._pixel_size_m = pixel_size_m
         self._error_text = None
+        self._drop_ruler()
         self.reset_view()
+        self._refresh_cursor()
+        self.update()
+
+    def update_pixmap(self, pixmap: QPixmap) -> None:
+        """Swap in a re-rendered pixmap of the same image (new levels)
+        without resetting the view."""
+        self._pixmap = pixmap
         self.update()
 
     def set_overlay_visible(self, visible: bool) -> None:
@@ -386,8 +446,11 @@ class ImageCanvasWidget(QWidget):
         """Display a centered error message instead of an image."""
         self._pixmap = None
         self._overlay_data = None
+        self._pixel_size_m = None
         self._error_text = text
+        self._drop_ruler()
         self.reset_view()
+        self._refresh_cursor()
         self.update()
 
     def clear(self) -> None:
@@ -397,10 +460,13 @@ class ImageCanvasWidget(QWidget):
         self._overlay_data = None
         self._overlay_visible = False
         self._error_text = None
+        self._pixel_size_m = None
         self._neighbor_pixmap = None
         self._neighbor_overlay_data = None
         self._current_opacity = 1.0
+        self._drop_ruler()
         self.reset_view()
+        self._refresh_cursor()
         self.update()
 
     def set_neighbor(
@@ -477,6 +543,98 @@ class ImageCanvasWidget(QWidget):
         self.update()
 
     # -----------------------------------------------------------------
+    # Ruler
+    # -----------------------------------------------------------------
+
+    def set_ruler_enabled(self, enabled: bool) -> None:
+        """Turn the ruler tool on or off.
+
+        Turning it off erases the ruler.  While it is on, the canvas
+        tracks the mouse so the placement preview can follow the
+        cursor, and shows a cross cursor over an image with a pixel
+        size (the label needs one).
+        """
+        self._ruler_enabled = bool(enabled)
+        self._drop_ruler()
+        self.setMouseTracking(self._ruler_enabled)
+        self._refresh_cursor()
+        self.update()
+
+    def _ruler_active(self) -> bool:
+        """Whether the ruler tool applies to the displayed image."""
+        has_image = self._pixmap is not None and not self._pixmap.isNull()
+        return self._ruler_enabled and has_image and bool(self._pixel_size_m)
+
+    def _drop_ruler(self) -> None:
+        """Erase the ruler, including one being placed or dragged."""
+        self._ruler = None
+        self._ruler_label_rect = None
+        self._press_mode = None
+
+    def _refresh_cursor(self) -> None:
+        """Cross cursor while the ruler tool applies, else the arrow."""
+        shape = (
+            Qt.CursorShape.CrossCursor if self._ruler_active()
+            else Qt.CursorShape.ArrowCursor
+        )
+        self.setCursor(QCursor(shape))
+
+    def _view_transform(self) -> ViewTransform | None:
+        """The image-to-widget mapping for the current view."""
+        disp_rect = self._compute_display_rect()
+        if disp_rect is None:
+            return None
+        return ViewTransform(
+            disp_rect.topLeft(), disp_rect.width() / self._pixmap.width(),
+        )
+
+    def _to_image(self, position: QPointF) -> QPointF | None:
+        """Widget position to image pixels, or *None* without an image."""
+        transform = self._view_transform()
+        return None if transform is None else transform.to_image(position)
+
+    @staticmethod
+    def _axis_lock(event) -> bool:
+        """Whether Shift or Ctrl is held on *event*."""
+        return bool(event.modifiers() & (
+            Qt.KeyboardModifier.ShiftModifier
+            | Qt.KeyboardModifier.ControlModifier
+        ))
+
+    def _press_ruler(self, position: QPointF) -> None:
+        """Route a left press while the ruler tool is on.
+
+        A press on the ruler starts dragging that part at once; any
+        other press stays undecided until the cursor moves past the
+        drag threshold (a pan) or is released in place (a click).
+        """
+        self._drag_active = False
+        transform = self._view_transform()
+        hit = None
+        if self._ruler is not None and transform is not None:
+            hit = self._ruler.hit_test(
+                position, transform, self._ruler_label_rect,
+                AppStyles.Dimensions.RULER_HIT_RADIUS_PX,
+            )
+        if hit is not None:
+            self._ruler.begin_drag(hit, transform.to_image(position))
+            self._press_mode = "ruler"
+        else:
+            self._press_mode = "maybe_pan"
+
+    def _click_ruler(self, position: QPointF, axis_lock: bool) -> None:
+        """Place the first or second point.  A click beside a complete
+        ruler does nothing; toggling the tool off clears it."""
+        image_point = self._to_image(position)
+        if image_point is None:
+            return
+        if self._ruler is None or self._ruler.state is RulerState.EMPTY:
+            self._ruler = Ruler()
+            self._ruler.place_first(image_point)
+        elif self._ruler.state is RulerState.PLACING:
+            self._ruler.place_second(image_point, axis_lock)
+
+    # -----------------------------------------------------------------
     # Mouse interaction
     # -----------------------------------------------------------------
 
@@ -512,7 +670,8 @@ class ImageCanvasWidget(QWidget):
         self.update()
 
     def mousePressEvent(self, event) -> None:
-        """Start drag panning on left-click.
+        """Start drag panning on left-click, or route the press to
+        the ruler while the tool is on.
 
         Ignored when no image is loaded so an empty canvas does
         not show the closed-hand cursor or pan a phantom view.
@@ -521,32 +680,90 @@ class ImageCanvasWidget(QWidget):
             self._pixmap is not None and not self._pixmap.isNull()
         )
         if event.button() == Qt.MouseButton.LeftButton and has_image:
-            self._drag_active = True
             self._drag_start_x = event.position().x()
             self._drag_start_y = event.position().y()
             self._drag_start_pan_x = self._pan_x
             self._drag_start_pan_y = self._pan_y
-            self.setCursor(QCursor(
-                Qt.CursorShape.ClosedHandCursor
-            ))
+            if self._ruler_active():
+                self._press_ruler(event.position())
+            else:
+                self._drag_active = True
+                self.setCursor(QCursor(
+                    Qt.CursorShape.ClosedHandCursor
+                ))
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
-        """Update pan offset while dragging."""
+        """Update the pan offset while dragging; with the ruler on,
+        drag the ruler, promote an undecided press to a pan once it
+        moves past the drag threshold, or move the placement preview.
+        """
+        position = event.position()
+        if self._press_mode == "ruler":
+            image_point = self._to_image(position)
+            if image_point is not None:
+                self._ruler.drag_to(image_point, self._axis_lock(event))
+                self.update()
+        elif (
+            self._press_mode == "maybe_pan"
+            and event.buttons() & Qt.MouseButton.LeftButton
+        ):
+            threshold = QApplication.startDragDistance()
+            if (
+                abs(position.x() - self._drag_start_x) > threshold
+                or abs(position.y() - self._drag_start_y) > threshold
+            ):
+                self._press_mode = "pan"
+                self._drag_active = True
+                self.setCursor(QCursor(
+                    Qt.CursorShape.ClosedHandCursor
+                ))
+        elif (
+            self._press_mode is None
+            and self._ruler is not None
+            and self._ruler.state is RulerState.PLACING
+        ):
+            image_point = self._to_image(position)
+            if image_point is not None:
+                self._ruler.set_preview(image_point, self._axis_lock(event))
+                self.update()
+
         if self._drag_active:
-            dx = event.position().x() - self._drag_start_x
-            dy = event.position().y() - self._drag_start_y
+            dx = position.x() - self._drag_start_x
+            dy = position.y() - self._drag_start_y
             self._pan_x = self._drag_start_pan_x + dx
             self._pan_y = self._drag_start_pan_y + dy
             self.update()
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
-        """End drag panning."""
+        """End drag panning or a ruler drag; a press released in
+        place while the ruler tool is on places a point."""
         if event.button() == Qt.MouseButton.LeftButton:
+            if self._press_mode == "ruler":
+                self._ruler.end_drag()
+            elif self._press_mode == "maybe_pan":
+                self._click_ruler(
+                    QPointF(self._drag_start_x, self._drag_start_y),
+                    self._axis_lock(event),
+                )
+            self._press_mode = None
             self._drag_active = False
-            self.setCursor(QCursor(Qt.CursorShape.ArrowCursor))
+            self._refresh_cursor()
+            self.update()
         super().mouseReleaseEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        """Hide the placement preview while the cursor is off the
+        canvas; the first point stays."""
+        if (
+            self._press_mode is None
+            and self._ruler is not None
+            and self._ruler.state is RulerState.PLACING
+        ):
+            self._ruler.set_preview(None)
+            self.update()
+        super().leaveEvent(event)
 
     # -----------------------------------------------------------------
     # Paint
@@ -624,6 +841,26 @@ class ImageCanvasWidget(QWidget):
 
         if fade_active:
             painter.setOpacity(1.0)
+
+        # Ruler above the image and graphics, below the scale bar.
+        self._ruler_label_rect = None
+        if self._ruler is not None and self._ruler_active():
+            transform = ViewTransform(
+                disp_rect.topLeft(),
+                disp_rect.width() / self._pixmap.width(),
+            )
+            self._ruler_label_rect = draw_ruler(
+                painter, self._ruler, transform, self._pixel_size_m,
+            )
+
+        # Scale bar last, in widget coordinates, describing the current
+        # image (a cross-faded neighbor is drawn into the same rect).
+        if self._pixel_size_m:
+            px_per_um = (
+                (disp_rect.width() / self._pixmap.width())
+                / (self._pixel_size_m * 1e6)
+            )
+            draw_scale_bar(painter, self.height(), px_per_um)
 
         painter.end()
 
@@ -821,15 +1058,32 @@ class ImageViewerGroupBox(QGroupBox):
         self._current_image_paths: list[Path] = []
         self._current_index: int = -1
         self._overlay_data: dict | None = None
+        self._pixel_size_m: tuple[float, float] | None = None
         self._preserved_view: tuple | None = None
 
+        # Pixel values of the displayed image, kept so a level change
+        # can re-render it, and the Manual levels as (black_point,
+        # white_point); None means auto levels.
+        self._current_raw: np.ndarray | None = None
+        self._levels: tuple[float, float] | None = None
+        # Histogram panel width: it opens at its minimum, then restores
+        # the width it had when last hidden.
+        self._histogram_width: int = (
+            AppStyles.Dimensions.HISTOGRAM_PANEL_MINIMUM_WIDTH
+        )
+
         # Decoded neighbour images for the opacity cross-fade, keyed by
-        # absolute path — each value is a ``(pixmap, overlay_data)`` pair.
-        # Populated lazily on first slider interaction and cleared on
-        # every image change (see _reset_opacity_sliders).
+        # absolute path — each value is a ``(pixel_values, overlay_data)``
+        # pair, with the pixmap rendered through the current levels
+        # cached separately.  Populated lazily on first slider
+        # interaction and cleared on every image change (see
+        # _reset_opacity_sliders); the pixmaps are also cleared on every
+        # level change.
         self._neighbor_cache: dict[
-            Path, tuple[QPixmap, dict | None]
+            Path, tuple[np.ndarray, dict | None]
         ] = {}
+        self._neighbor_pixmaps: dict[Path, QPixmap] = {}
+        self._fade_neighbor_path: Path | None = None
 
         self._create_widgets()
         self._setup_layout()
@@ -860,6 +1114,7 @@ class ImageViewerGroupBox(QGroupBox):
         )
         self._current_image_paths.clear()
         self._current_index = -1
+        self._levels = None
 
         # Populate combo box
         self._directory_combobox.blockSignals(True)
@@ -896,6 +1151,7 @@ class ImageViewerGroupBox(QGroupBox):
         self._current_image_paths.clear()
         self._current_index = -1
         self._preserved_view = None
+        self._levels = None
         self._directory_combobox.blockSignals(True)
         self._directory_combobox.clear()
         self._directory_combobox.blockSignals(False)
@@ -947,10 +1203,12 @@ class ImageViewerGroupBox(QGroupBox):
             self._preserved_view = None
             self._resolve_directory_paths(dir_index)
 
-        # Navigate to the requested image and display it exactly once.
+        # Navigate to the requested image and display it exactly once,
+        # with auto levels.
         for i, path in enumerate(self._current_image_paths):
             if path.name == filename:
                 self._current_index = i
+                self._levels = None
                 self._display_current_image()
                 self._update_nav_button_states()
                 logger.info(
@@ -1012,21 +1270,44 @@ class ImageViewerGroupBox(QGroupBox):
             Qt.FocusPolicy.NoFocus
         )
 
+        # Show histogram checkbox (enabled while an image is shown)
+        self._show_histogram_checkbox = QCheckBox(
+            "Show histogram", parent=self
+        )
+        self._show_histogram_checkbox.setStyleSheet(
+            AppStyles.CheckBox.default()
+        )
+        self._show_histogram_checkbox.setChecked(False)
+        self._show_histogram_checkbox.setEnabled(False)
+        self._show_histogram_checkbox.setFocusPolicy(
+            Qt.FocusPolicy.NoFocus
+        )
+
+        # Histogram side panel, hidden until the checkbox is checked
+        self._histogram = HistogramGroupBox(parent=self)
+        self._histogram.setVisible(False)
+
         # QPainter-based image canvas
         self._canvas = ImageCanvasWidget(parent=self)
-        # Forward resize events so the reset-view button stays
-        # pinned to the bottom-right corner.
+        # Forward resize events so the corner buttons stay pinned to
+        # the bottom-right corner.
         self._canvas.installEventFilter(self)
 
         # Reset-view button floated over the canvas.  Parented to
         # the canvas so it sits on top in z-order; positioned
-        # manually via ``_position_reset_button``.
+        # manually via ``_position_canvas_buttons``.
         self._reset_view_button = ResetViewButton(
             parent=self._canvas
         )
         self._reset_view_button.setFocusPolicy(
             Qt.FocusPolicy.NoFocus
         )
+
+        # Ruler button stacked above it; enabled only while the image
+        # has a pixel size (see _set_ruler_available).
+        self._ruler_button = RulerButton(parent=self._canvas)
+        self._ruler_button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self._ruler_button.setEnabled(False)
 
         # Navigation buttons (NoFocus prevents scroll-on-click)
         self._prev_button = PreviousButton(parent=self)
@@ -1099,7 +1380,22 @@ class ImageViewerGroupBox(QGroupBox):
         name_row.setSpacing(AppStyles.Dimensions.LAYOUT_VSPACING)
         name_row.addWidget(self._image_name_label, 1)
         name_row.addWidget(self._show_graphics_checkbox)
+        name_row.addWidget(self._show_histogram_checkbox)
         name_row.addWidget(self._image_counter_label)
+
+        # Canvas and histogram side panel, resizable against each other
+        self._canvas_splitter = QSplitter(
+            Qt.Orientation.Horizontal, parent=self
+        )
+        self._canvas_splitter.setHandleWidth(
+            AppStyles.Dimensions.SPLITTER_HANDLE_WIDTH
+        )
+        self._canvas_splitter.setStyleSheet(AppStyles.Splitter.horizontal())
+        self._canvas_splitter.setChildrenCollapsible(False)
+        self._canvas_splitter.addWidget(self._canvas)
+        self._canvas_splitter.addWidget(self._histogram)
+        self._canvas_splitter.setStretchFactor(0, 1)
+        self._canvas_splitter.setStretchFactor(1, 0)
 
         # Button row: opacity sliders flank the nav buttons (labels on
         # the outer edges, mirrored; sliders inboard).  Labels/sliders
@@ -1120,7 +1416,7 @@ class ImageViewerGroupBox(QGroupBox):
         right_column.setSpacing(AppStyles.Dimensions.LAYOUT_VSPACING)
         right_column.addLayout(name_row)
         right_column.addWidget(self._info_label)
-        right_column.addWidget(self._canvas, 1)
+        right_column.addWidget(self._canvas_splitter, 1)
         right_column.addLayout(button_row)
 
         right_container = QWidget()
@@ -1170,33 +1466,54 @@ class ImageViewerGroupBox(QGroupBox):
         self._show_graphics_checkbox.toggled.connect(
             self._on_show_graphics_toggled
         )
+        self._show_histogram_checkbox.toggled.connect(
+            self._on_show_histogram_toggled
+        )
+        self._histogram.levels_changed.connect(self._on_levels_changed)
+        self._histogram.levels_reset.connect(self._on_levels_reset)
         self._reset_view_button.clicked.connect(self._on_reset_view)
+        self._ruler_button.toggled.connect(self._canvas.set_ruler_enabled)
         self._image_name_label.clicked.connect(self._on_image_name_clicked)
 
     # -----------------------------------------------------------------
-    # Reset-view button placement
+    # Corner button placement
     # -----------------------------------------------------------------
 
     def eventFilter(self, obj, event):
-        """Reposition the reset-view button when the canvas
-        resizes so it stays pinned to the bottom-right corner.
+        """Reposition the corner buttons when the canvas resizes so
+        they stay pinned to the bottom-right corner.
         """
         if (
             obj is self._canvas
             and event.type() == QEvent.Type.Resize
         ):
-            self._position_reset_button()
+            self._position_canvas_buttons()
         return super().eventFilter(obj, event)
 
-    def _position_reset_button(self) -> None:
-        """Pin the reset-view button to the bottom-right corner
-        of the canvas with a small inset margin."""
-        margin = 8
-        btn = self._reset_view_button
-        x = self._canvas.width() - btn.width() - margin
-        y = self._canvas.height() - btn.height() - margin
-        btn.move(x, y)
-        btn.raise_()
+    def _position_canvas_buttons(self) -> None:
+        """Pin the reset-view button to the bottom-right corner of
+        the canvas with a small inset margin, and stack the ruler
+        button above it."""
+        margin = AppStyles.Dimensions.CANVAS_OVERLAY_INSET
+        gap = AppStyles.Dimensions.CANVAS_OVERLAY_BUTTON_GAP
+        reset = self._reset_view_button
+        ruler = self._ruler_button
+        x = self._canvas.width() - reset.width() - margin
+        y = self._canvas.height() - reset.height() - margin
+        reset.move(x, y)
+        ruler.move(
+            x + reset.width() - ruler.width(), y - gap - ruler.height(),
+        )
+        reset.raise_()
+        ruler.raise_()
+
+    def _set_ruler_available(self, available: bool) -> None:
+        """Enable the ruler button while the image has a pixel size.
+
+        The button keeps its checked state while disabled, so the tool
+        returns with the next image that can be measured.
+        """
+        self._ruler_button.setEnabled(available)
 
     @Slot()
     def _on_reset_view(self) -> None:
@@ -1233,15 +1550,16 @@ class ImageViewerGroupBox(QGroupBox):
 
         Resolves the directory's image paths and displays the
         first image.  Switching directories resets the zoom/pan
-        view.
+        view and returns to auto levels.
 
         :param index: Selected combo box index.
         """
         if index < 0 or index >= len(self._image_directories):
             return
 
-        # Reset zoom/pan when switching directories
+        # Reset zoom/pan and levels when switching directories
         self._preserved_view = None
+        self._levels = None
 
         self._resolve_directory_paths(index)
 
@@ -1369,23 +1687,24 @@ class ImageViewerGroupBox(QGroupBox):
                 slider.setValue(100)
                 slider.blockSignals(False)
         self._neighbor_cache.clear()
+        self._neighbor_pixmaps.clear()
+        self._fade_neighbor_path = None
         self._canvas.clear_neighbor()
 
     def _get_neighbor(
         self, neighbor_index: int,
-    ) -> tuple[QPixmap, dict | None] | None:
-        """Decode (and cache) the pixmap and overlay for
+    ) -> tuple[np.ndarray, dict | None] | None:
+        """Decode (and cache) the pixel values and overlay for
         *neighbor_index*.
 
-        Uses the same native-resolution ``load_image`` /
-        ``numpy_to_qpixmap`` pipeline as the current image so the fade
-        compares like-for-like, and the same guarded overlay extraction
-        so the neighbour's graphics can fade in during the cross-fade.
-        Returns *None* for a missing or undecodable file so the caller
-        can cancel the fade cleanly.
+        Uses the same native-resolution ``load_image_native`` loader as
+        the current image so the fade compares like-for-like, and the
+        same guarded overlay extraction so the neighbour's graphics can
+        fade in during the cross-fade.  Returns *None* for a missing or
+        undecodable file so the caller can cancel the fade cleanly.
 
         :param neighbor_index: Index into ``_current_image_paths``.
-        :return: ``(pixmap, overlay_data)`` pair, or *None*.
+        :return: ``(pixel_values, overlay_data)`` pair, or *None*.
         """
         path = self._current_image_paths[neighbor_index]
         cached = self._neighbor_cache.get(path)
@@ -1396,11 +1715,8 @@ class ImageViewerGroupBox(QGroupBox):
             logger.debug(f"Opacity neighbour not on disk: {path.name}")
             return None
 
-        img = load_image(path)
-        if img is None:
-            return None
-        pixmap = numpy_to_qpixmap(img)
-        if pixmap is None:
+        raw = load_image_native(path)
+        if raw is None or raw.size == 0:
             return None
 
         # Extract the neighbour's overlay so its crosshair/rectangles
@@ -1417,9 +1733,26 @@ class ImageViewerGroupBox(QGroupBox):
                 exc_info=True,
             )
 
-        entry = (pixmap, overlay)
+        entry = (raw, overlay)
         self._neighbor_cache[path] = entry
         return entry
+
+    def _neighbor_pixmap(
+        self, path: Path, raw: np.ndarray,
+    ) -> QPixmap | None:
+        """Render a neighbour through the current levels, cached until
+        the levels or the current image change.
+
+        :param path: The neighbour's path (the cache key).
+        :param raw: The neighbour's pixel values.
+        :return: ``QPixmap``, or *None* if the array is unusable.
+        """
+        pixmap = self._neighbor_pixmaps.get(path)
+        if pixmap is None:
+            pixmap = self._render(raw)
+            if pixmap is not None:
+                self._neighbor_pixmaps[path] = pixmap
+        return pixmap
 
     @Slot(int)
     def _on_prev_opacity_changed(self, value: int):
@@ -1468,18 +1801,24 @@ class ImageViewerGroupBox(QGroupBox):
             other_slider.blockSignals(False)
 
         neighbor_index = (self._current_index + offset) % n
+        path = self._current_image_paths[neighbor_index]
         entry = self._get_neighbor(neighbor_index)
+        pixmap = (
+            self._neighbor_pixmap(path, entry[0])
+            if entry is not None else None
+        )
 
-        if entry is None:
+        if pixmap is None:
             # Missing/failed neighbour: cancel this fade, snap back.
             slider.blockSignals(True)
             slider.setValue(100)
             slider.blockSignals(False)
+            self._fade_neighbor_path = None
             self._canvas.clear_neighbor()
             return
 
-        neighbor_pixmap, neighbor_overlay = entry
-        self._canvas.set_neighbor(neighbor_pixmap, neighbor_overlay)
+        self._fade_neighbor_path = path
+        self._canvas.set_neighbor(pixmap, entry[1])
         self._canvas.set_current_opacity(value / 100.0)
 
     # -----------------------------------------------------------------
@@ -1526,6 +1865,8 @@ class ImageViewerGroupBox(QGroupBox):
         # lowered slider never persists across navigation (covers
         # Previous/Next, directory selection, and select_image).
         self._reset_opacity_sliders()
+        self._current_raw = None
+        self._set_histogram_available(True)
 
         image_path = self._current_image_paths[self._current_index]
 
@@ -1545,41 +1886,55 @@ class ImageViewerGroupBox(QGroupBox):
         self._populate_metadata(image_path)
 
         if not image_path.is_file():
-            self._canvas.set_error_text("Image file not found")
+            self._show_load_failure("Image file not found")
             return
 
-        # Load at native resolution (no max_dim) so wheel zoom can
-        # inspect full image detail.  SEM/FIB images are grayscale
-        # and ``numpy_to_qpixmap`` handles uint8 / uint16 / float32
-        # via per-image min-max stretch.
-        img = load_image(image_path)
-        if img is None:
-            self._canvas.set_error_text("Failed to load image")
-            return
-
-        pixmap = numpy_to_qpixmap(img)
+        # Load at native resolution so wheel zoom can inspect full
+        # image detail, keeping the stored pixel values for the
+        # histogram and levels.
+        raw = load_image_native(image_path)
+        pixmap = self._render(raw) if raw is not None else None
         if pixmap is None:
-            self._canvas.set_error_text("Failed to load image")
+            self._show_load_failure("Failed to load image")
             return
+        self._current_raw = raw
 
-        # Hand the canvas the pixmap and the (already image-pixel
-        # space) overlay dict.  ``set_image`` resets the view; the
-        # subsequent ``_restore_view`` reapplies a saved view if
-        # Previous/Next is in flight.
-        self._canvas.set_image(pixmap, self._overlay_data)
+        # Hand the canvas the pixmap, the (already image-pixel space)
+        # overlay dict, and the pixel size for the scale bar.
+        # ``set_image`` resets the view; the subsequent
+        # ``_restore_view`` reapplies a saved view if Previous/Next is
+        # in flight.
+        pixel_size_x_m = (
+            self._pixel_size_m[0] if self._pixel_size_m else None
+        )
+        self._canvas.set_image(
+            pixmap, self._overlay_data, pixel_size_x_m,
+        )
         self._canvas.set_overlay_visible(
             self._show_graphics_checkbox.isChecked()
         )
+        self._set_ruler_available(pixel_size_x_m is not None)
         self._restore_view()
+        self._refresh_histogram()
 
         logger.debug(
             f"Image displayed: {image_path.name} "
             f"({pixmap.width()}x{pixmap.height()})"
         )
 
+    def _show_load_failure(self, text: str) -> None:
+        """Show *text* in place of the image and empty the histogram."""
+        self._current_raw = None
+        self._canvas.set_error_text(text)
+        self._set_ruler_available(False)
+        self._refresh_histogram()
+
     def _clear_canvas(self):
         """Clear the image canvas."""
         self._canvas.clear()
+        self._current_raw = None
+        self._set_histogram_available(False)
+        self._set_ruler_available(False)
         self._reset_opacity_sliders()
         self._image_name_label.setText("")
         self._image_name_label.set_clickable(False)
@@ -1696,12 +2051,8 @@ class ImageViewerGroupBox(QGroupBox):
                 pass
 
         # -- PixelSize from BinaryResult -----------------------------
-        pixel_size = binary_result.get("PixelSize", {})
-        px_x: float | None = None
-        px_y: float | None = None
-        if isinstance(pixel_size, dict):
-            px_x = _extract_pixel_size_val(pixel_size.get("X"))
-            px_y = _extract_pixel_size_val(pixel_size.get("Y"))
+        pixel_size = pixel_size_from_xml(xml)
+        px_x, px_y = pixel_size if pixel_size else (None, None)
 
         # -- ActivityName from ProgressInformation -------------------
         progress_info = custom_sections.get(
@@ -1774,13 +2125,111 @@ class ImageViewerGroupBox(QGroupBox):
         self._canvas.set_overlay_visible(checked)
 
     # -----------------------------------------------------------------
+    # Histogram and Levels
+    # -----------------------------------------------------------------
+
+    def _render(self, raw: np.ndarray) -> QPixmap | None:
+        """Render pixel values through the current levels.
+
+        Manual levels apply to grayscale images only; a color image
+        (an RGB plot) always shows its first channel with auto levels.
+
+        :param raw: Pixel values from ``load_image_native``.
+        :return: ``QPixmap``, or *None* if the array is unusable.
+        """
+        levels = self._levels if raw.ndim == 2 else None
+        return numpy_to_qpixmap(raw, levels)
+
+    @Slot(float, float)
+    def _on_levels_changed(self, black: float, white: float):
+        """Switch to Manual levels and re-render, keeping the view."""
+        self._levels = (black, white)
+        self._rerender()
+
+    @Slot()
+    def _on_levels_reset(self):
+        """Return to auto levels."""
+        self._levels = None
+        self._rerender()
+        self._refresh_histogram()
+
+    def _rerender(self) -> None:
+        """Re-render the current image, and any cross-faded neighbour,
+        through the current levels without resetting the view."""
+        self._neighbor_pixmaps.clear()
+        if self._current_raw is not None:
+            pixmap = self._render(self._current_raw)
+            if pixmap is not None:
+                self._canvas.update_pixmap(pixmap)
+
+        path = self._fade_neighbor_path
+        entry = self._neighbor_cache.get(path) if path else None
+        if entry is not None:
+            pixmap = self._neighbor_pixmap(path, entry[0])
+            if pixmap is not None:
+                self._canvas.set_neighbor(pixmap, entry[1])
+                self._canvas.update()
+
+    def _refresh_histogram(self) -> None:
+        """Recompute the histogram of the current image while the
+        panel is shown; a color image or failed load shows the
+        placeholder."""
+        if self._histogram.isHidden():
+            return
+        raw = self._current_raw
+        if raw is None or raw.ndim != 2:
+            self._histogram.clear()
+            return
+        self._histogram.set_histogram(raw, self._levels)
+
+    def _set_histogram_available(self, available: bool) -> None:
+        """Enable the Show histogram checkbox while an image is shown.
+
+        The checkbox keeps its checked state while disabled, so the
+        panel returns with the next image.
+        """
+        self._show_histogram_checkbox.setEnabled(available)
+        self._update_histogram_panel()
+
+    @Slot(bool)
+    def _on_show_histogram_toggled(self, checked: bool):
+        """Show or hide the histogram panel."""
+        self._update_histogram_panel()
+
+    def _update_histogram_panel(self) -> None:
+        """Show the histogram panel while its checkbox is checked and
+        enabled, restoring the width it had when last hidden."""
+        visible = (
+            self._show_histogram_checkbox.isChecked()
+            and self._show_histogram_checkbox.isEnabled()
+        )
+        if visible == (not self._histogram.isHidden()):
+            return
+
+        sizes = self._canvas_splitter.sizes()
+        if not visible:
+            if sizes[1] > 0:
+                self._histogram_width = sizes[1]
+            self._histogram.setVisible(False)
+            return
+
+        self._histogram.setVisible(True)
+        total = sum(sizes)
+        if total > self._histogram_width:
+            self._canvas_splitter.setSizes(
+                [total - self._histogram_width, self._histogram_width]
+            )
+        self._refresh_histogram()
+
+    # -----------------------------------------------------------------
     # Metadata Tree
     # -----------------------------------------------------------------
 
     def _populate_metadata(self, image_path: Path):
         """Extract and display metadata for the current image.
 
-        Also extracts overlay data for the graphics checkbox.
+        Also extracts overlay data for the graphics checkbox and the
+        pixel size for the scale bar.
 
         :param image_path: Absolute path to the image file.
         """
@@ -1807,9 +2256,13 @@ class ImageViewerGroupBox(QGroupBox):
             self._overlay_data is not None
         )
 
+        # The scale bar needs only the pixel size, not the graphics.
+        self._pixel_size_m = extract_pixel_size_m(metadata)
+
     def _clear_metadata(self):
         """Reset the metadata tree to empty."""
         self._meta_panel.clear_tree()
         self._meta_panel.setVisible(False)
         self._overlay_data = None
+        self._pixel_size_m = None
         self._show_graphics_checkbox.setEnabled(False)
